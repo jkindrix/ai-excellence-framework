@@ -13,6 +13,9 @@ Features:
 - Export/import for backup and portability
 - Health check endpoint
 - Version tracking
+- Connection pooling for team deployments
+- Rate limiting protection
+- Thread-safe operations
 
 Usage:
     python project-memory-server.py
@@ -21,9 +24,11 @@ Configuration via environment:
     PROJECT_MEMORY_DB: Database file path (default: ~/.claude/project-memories/{project}.db)
     PROJECT_MEMORY_MAX_DECISIONS: Maximum stored decisions (default: 1000)
     PROJECT_MEMORY_MAX_PATTERNS: Maximum stored patterns (default: 100)
+    PROJECT_MEMORY_POOL_SIZE: Connection pool size (default: 5)
+    PROJECT_MEMORY_RATE_LIMIT: Max operations per minute (default: 100)
 """
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 import json
 import logging
@@ -31,9 +36,14 @@ import os
 import re
 import sqlite3
 import sys
+import threading
+import time
+from collections import deque
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from queue import Queue, Empty
+from typing import Any, Optional, Generator
 
 # Configure logging
 logging.basicConfig(
@@ -56,7 +66,123 @@ except ImportError:
 MAX_DECISIONS = int(os.environ.get("PROJECT_MEMORY_MAX_DECISIONS", "1000"))
 MAX_PATTERNS = int(os.environ.get("PROJECT_MEMORY_MAX_PATTERNS", "100"))
 MAX_CONTEXT_KEYS = int(os.environ.get("PROJECT_MEMORY_MAX_CONTEXT_KEYS", "50"))
+POOL_SIZE = int(os.environ.get("PROJECT_MEMORY_POOL_SIZE", "5"))
+RATE_LIMIT = int(os.environ.get("PROJECT_MEMORY_RATE_LIMIT", "100"))  # ops per minute
 MAX_STRING_LENGTH = 10000  # Maximum length for any string input
+
+
+class ConnectionPool:
+    """Thread-safe SQLite connection pool for team deployments."""
+
+    def __init__(self, db_path: Path, pool_size: int = 5):
+        self.db_path = db_path
+        self.pool_size = pool_size
+        self._pool: Queue = Queue(maxsize=pool_size)
+        self._lock = threading.Lock()
+        self._initialized = False
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create a new database connection with optimal settings."""
+        conn = sqlite3.connect(
+            str(self.db_path),
+            check_same_thread=False,
+            timeout=30.0,
+            isolation_level=None  # Autocommit mode
+        )
+        # Enable WAL mode for better concurrency
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=10000")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        return conn
+
+    def initialize(self) -> None:
+        """Initialize the connection pool."""
+        with self._lock:
+            if self._initialized:
+                return
+            for _ in range(self.pool_size):
+                self._pool.put(self._create_connection())
+            self._initialized = True
+            logger.info(f"Connection pool initialized with {self.pool_size} connections")
+
+    @contextmanager
+    def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Get a connection from the pool (context manager)."""
+        if not self._initialized:
+            self.initialize()
+
+        conn = None
+        try:
+            conn = self._pool.get(timeout=30.0)
+            yield conn
+        except Empty:
+            # Pool exhausted, create temporary connection
+            logger.warning("Connection pool exhausted, creating temporary connection")
+            conn = self._create_connection()
+            yield conn
+            conn.close()
+            conn = None
+        finally:
+            if conn is not None:
+                try:
+                    self._pool.put_nowait(conn)
+                except Exception:
+                    conn.close()
+
+    def close_all(self) -> None:
+        """Close all connections in the pool."""
+        with self._lock:
+            while not self._pool.empty():
+                try:
+                    conn = self._pool.get_nowait()
+                    conn.close()
+                except Empty:
+                    break
+            self._initialized = False
+            logger.info("Connection pool closed")
+
+
+class RateLimiter:
+    """Simple rate limiter to prevent abuse."""
+
+    def __init__(self, max_ops: int = 100, window_seconds: int = 60):
+        self.max_ops = max_ops
+        self.window_seconds = window_seconds
+        self._operations: deque = deque()
+        self._lock = threading.Lock()
+
+    def check(self) -> bool:
+        """Check if operation is allowed. Returns True if allowed."""
+        now = time.time()
+        cutoff = now - self.window_seconds
+
+        with self._lock:
+            # Remove old operations
+            while self._operations and self._operations[0] < cutoff:
+                self._operations.popleft()
+
+            # Check limit
+            if len(self._operations) >= self.max_ops:
+                return False
+
+            # Record operation
+            self._operations.append(now)
+            return True
+
+    def remaining(self) -> int:
+        """Get remaining operations in current window."""
+        now = time.time()
+        cutoff = now - self.window_seconds
+
+        with self._lock:
+            while self._operations and self._operations[0] < cutoff:
+                self._operations.popleft()
+            return max(0, self.max_ops - len(self._operations))
+
+
+# Global rate limiter
+rate_limiter = RateLimiter(max_ops=RATE_LIMIT, window_seconds=60)
 
 
 def sanitize_input(value: str, max_length: int = MAX_STRING_LENGTH) -> str:
@@ -80,16 +206,32 @@ def validate_key(key: str) -> bool:
 
 
 class ProjectMemoryDB:
-    """SQLite-backed project memory storage."""
+    """SQLite-backed project memory storage with connection pooling."""
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, use_pool: bool = True):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._use_pool = use_pool
+        self._pool: Optional[ConnectionPool] = None
+
+        if use_pool:
+            self._pool = ConnectionPool(db_path, pool_size=POOL_SIZE)
+
         self._init_db()
+
+    @contextmanager
+    def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
+        """Get a database connection (from pool or direct)."""
+        if self._pool:
+            with self._pool.get_connection() as conn:
+                yield conn
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                yield conn
 
     def _init_db(self):
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS decisions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +271,7 @@ class ProjectMemoryDB:
         # Enforce limits
         self._enforce_decision_limit()
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             cursor = conn.execute("""
                 INSERT INTO decisions (timestamp, decision, rationale, context, alternatives)
                 VALUES (?, ?, ?, ?, ?)
@@ -145,7 +287,7 @@ class ProjectMemoryDB:
 
     def _enforce_decision_limit(self):
         """Remove oldest decisions if limit exceeded."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             count = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
             if count >= MAX_DECISIONS:
                 # Delete oldest 10%
@@ -160,7 +302,7 @@ class ProjectMemoryDB:
 
     def search_decisions(self, keyword: Optional[str] = None, limit: int = 20) -> list:
         """Search decisions, optionally filtered by keyword."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row
             if keyword:
                 keyword = sanitize_input(keyword, 100)
@@ -184,7 +326,7 @@ class ProjectMemoryDB:
         # Enforce limits
         self._enforce_pattern_limit()
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.execute("""
                 INSERT INTO patterns (name, description, example, when_to_use, updated_at)
                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -204,7 +346,7 @@ class ProjectMemoryDB:
 
     def _enforce_pattern_limit(self):
         """Remove oldest patterns if limit exceeded."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             count = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
             if count >= MAX_PATTERNS:
                 # Delete oldest by updated_at
@@ -217,7 +359,7 @@ class ProjectMemoryDB:
 
     def get_patterns(self) -> list:
         """Get all stored patterns."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("SELECT * FROM patterns ORDER BY name")
             return [dict(row) for row in cursor.fetchall()]
@@ -230,7 +372,7 @@ class ProjectMemoryDB:
         # Enforce limits
         self._enforce_context_limit()
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.execute("""
                 INSERT INTO context (key, value, updated_at)
                 VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -243,7 +385,7 @@ class ProjectMemoryDB:
 
     def _enforce_context_limit(self):
         """Remove oldest context entries if limit exceeded."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             count = conn.execute("SELECT COUNT(*) FROM context").fetchone()[0]
             if count >= MAX_CONTEXT_KEYS:
                 conn.execute("""
@@ -255,13 +397,13 @@ class ProjectMemoryDB:
 
     def get_context(self) -> dict:
         """Get all context key-value pairs."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             cursor = conn.execute("SELECT key, value FROM context")
             return {row[0]: row[1] for row in cursor.fetchall()}
 
     def get_stats(self) -> dict:
         """Get database statistics."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             stats = {
                 "decisions": conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0],
                 "patterns": conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0],
@@ -277,7 +419,7 @@ class ProjectMemoryDB:
 
     def export_all(self) -> dict:
         """Export all data as JSON-serializable dictionary."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row
 
             # Export decisions
@@ -320,7 +462,7 @@ class ProjectMemoryDB:
 
         stats = {"decisions": 0, "patterns": 0, "context": 0, "skipped": 0}
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             if not merge:
                 # Clear existing data
                 conn.execute("DELETE FROM decisions")
@@ -393,7 +535,7 @@ class ProjectMemoryDB:
 
         try:
             # Check database connectivity
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_conn() as conn:
                 conn.execute("SELECT 1")
             health["checks"]["database_connection"] = "ok"
         except Exception as e:
@@ -402,7 +544,7 @@ class ProjectMemoryDB:
 
         try:
             # Check database integrity
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_conn() as conn:
                 result = conn.execute("PRAGMA integrity_check").fetchone()[0]
                 health["checks"]["database_integrity"] = result
                 if result != "ok":
@@ -413,7 +555,7 @@ class ProjectMemoryDB:
 
         try:
             # Check write capability
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_conn() as conn:
                 conn.execute("INSERT INTO context (key, value) VALUES ('_health_check', 'test')")
                 conn.execute("DELETE FROM context WHERE key = '_health_check'")
                 conn.commit()
@@ -442,7 +584,7 @@ class ProjectMemoryDB:
 
     def purge_all(self) -> dict:
         """Purge all data from the database. Returns counts of deleted items."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             decisions = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
             patterns = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
             context = conn.execute("SELECT COUNT(*) FROM context").fetchone()[0]
