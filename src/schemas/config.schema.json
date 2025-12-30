@@ -1,0 +1,248 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ai-excellence-framework/config.schema.json",
+  "title": "AI Excellence Framework Configuration",
+  "description": "Configuration schema for ai-excellence.config.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference"
+    },
+    "version": {
+      "type": "string",
+      "description": "Framework version",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "default": "1.0.0"
+    },
+    "preset": {
+      "type": "string",
+      "enum": ["minimal", "standard", "full", "team", "custom"],
+      "description": "Configuration preset",
+      "default": "standard"
+    },
+    "project": {
+      "type": "object",
+      "description": "Project-specific settings",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Project name",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "language": {
+          "type": "string",
+          "enum": ["typescript", "javascript", "python", "go", "rust", "java", "other"],
+          "description": "Primary programming language"
+        },
+        "framework": {
+          "type": "string",
+          "description": "Primary framework (e.g., 'react', 'django', 'express')"
+        }
+      }
+    },
+    "commands": {
+      "type": "object",
+      "description": "Slash command configuration",
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["plan", "verify", "handoff", "assumptions", "review", "security-review", "refactor", "test-coverage"]
+          },
+          "description": "List of enabled commands",
+          "default": ["plan", "verify", "handoff", "assumptions", "review", "security-review"]
+        },
+        "custom": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "file"]
+          },
+          "description": "Custom command definitions"
+        }
+      }
+    },
+    "agents": {
+      "type": "object",
+      "description": "Subagent configuration",
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["reviewer", "explorer", "tester"]
+          },
+          "description": "List of enabled agents",
+          "default": ["reviewer", "explorer", "tester"]
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Git hooks configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether hooks are enabled",
+          "default": true
+        },
+        "postEdit": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 30,
+              "description": "Timeout in seconds"
+            },
+            "formatters": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of formatters to run"
+            }
+          }
+        },
+        "verifyDeps": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "failOnUnknown": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "description": "Security configuration",
+      "properties": {
+        "preCommit": {
+          "type": "boolean",
+          "description": "Enable pre-commit security hooks",
+          "default": true
+        },
+        "secretsDetection": {
+          "type": "boolean",
+          "description": "Enable secrets detection",
+          "default": true
+        },
+        "dependencyScanning": {
+          "type": "boolean",
+          "description": "Enable dependency vulnerability scanning",
+          "default": true
+        },
+        "aiPatternChecks": {
+          "type": "boolean",
+          "description": "Enable AI-specific vulnerability pattern checks",
+          "default": true
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "description": "MCP server configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable MCP project memory server",
+          "default": false
+        },
+        "storage": {
+          "type": "string",
+          "enum": ["sqlite", "postgres"],
+          "description": "Storage backend",
+          "default": "sqlite"
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "maxDecisions": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 10000,
+              "default": 1000
+            },
+            "maxPatterns": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 1000,
+              "default": 100
+            },
+            "maxContextKeys": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 500,
+              "default": 50
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Metrics collection configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable metrics collection",
+          "default": false
+        },
+        "autoCollect": {
+          "type": "boolean",
+          "description": "Automatically collect metrics at session end",
+          "default": false
+        },
+        "directory": {
+          "type": "string",
+          "description": "Directory for metrics storage",
+          "default": ".tmp/metrics"
+        }
+      }
+    },
+    "team": {
+      "type": "object",
+      "description": "Team collaboration settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "sharedMemory": {
+          "type": "boolean",
+          "description": "Enable shared MCP memory across team",
+          "default": false
+        },
+        "enforceConventions": {
+          "type": "boolean",
+          "description": "Enforce CLAUDE.md conventions",
+          "default": true
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

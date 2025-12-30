@@ -1,0 +1,176 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ai-excellence-framework/claude-md.schema.json",
+  "title": "CLAUDE.md Validation Schema",
+  "description": "Schema for validating CLAUDE.md structure (conceptual - actual validation done via regex)",
+  "type": "object",
+  "properties": {
+    "sections": {
+      "type": "object",
+      "description": "Required and optional sections in CLAUDE.md",
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern to match section header"
+              },
+              "minLength": {
+                "type": "integer",
+                "description": "Minimum content length after header"
+              }
+            },
+            "required": ["name", "pattern"]
+          },
+          "default": [
+            {
+              "name": "Overview",
+              "pattern": "## Overview",
+              "minLength": 50
+            },
+            {
+              "name": "Tech Stack",
+              "pattern": "## Tech Stack",
+              "minLength": 20
+            },
+            {
+              "name": "Current State",
+              "pattern": "## Current State",
+              "minLength": 20
+            }
+          ]
+        },
+        "recommended": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "pattern": {
+                "type": "string"
+              }
+            }
+          },
+          "default": [
+            {
+              "name": "Architecture",
+              "pattern": "## Architecture"
+            },
+            {
+              "name": "Conventions",
+              "pattern": "## Conventions"
+            },
+            {
+              "name": "Common Commands",
+              "pattern": "## Common Commands"
+            },
+            {
+              "name": "Session Instructions",
+              "pattern": "## Session Instructions"
+            }
+          ]
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "description": "Content constraints for CLAUDE.md",
+      "properties": {
+        "maxLines": {
+          "type": "integer",
+          "description": "Maximum recommended lines",
+          "default": 300
+        },
+        "maxBytes": {
+          "type": "integer",
+          "description": "Maximum recommended size in bytes",
+          "default": 30000
+        },
+        "forbiddenPatterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "description": "Regex pattern to forbid"
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why this pattern is forbidden"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["error", "warning"]
+              }
+            }
+          },
+          "default": [
+            {
+              "pattern": "password\\s*[:=]\\s*[\"'][^\"']{8,}[\"']",
+              "reason": "Potential hardcoded password",
+              "severity": "error"
+            },
+            {
+              "pattern": "api[_-]?key\\s*[:=]\\s*[\"'][^\"']{16,}[\"']",
+              "reason": "Potential hardcoded API key",
+              "severity": "error"
+            },
+            {
+              "pattern": "-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----",
+              "reason": "Private key detected",
+              "severity": "error"
+            },
+            {
+              "pattern": "sk-[a-zA-Z0-9]{20,}",
+              "reason": "Potential OpenAI API key",
+              "severity": "error"
+            }
+          ]
+        }
+      }
+    },
+    "bestPractices": {
+      "type": "array",
+      "description": "Best practices for CLAUDE.md content",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string",
+            "description": "How to verify this rule"
+          }
+        }
+      },
+      "default": [
+        {
+          "rule": "Keep under 300 lines",
+          "check": "lineCount <= 300"
+        },
+        {
+          "rule": "Use pointers to files, not inline code",
+          "check": "Minimal code blocks (< 5)"
+        },
+        {
+          "rule": "Update Current State section regularly",
+          "check": "Section modified within 7 days"
+        },
+        {
+          "rule": "Include concrete commands, not just descriptions",
+          "check": "Has Common Commands section with code blocks"
+        }
+      ]
+    }
+  }
+}
