@@ -108,17 +108,31 @@ Phase 1: Validate — Initial dogfooding and structure setup
 1. Read this file completely
 2. Check `docs/session-notes/` for recent context
 3. Review the action plan for current phase goals
+4. Note the current dogfooding status below
 
 ### During Work
 - Use `/plan` before implementing anything significant
+- Use `/assumptions` to surface hidden assumptions
 - Use `/verify` before marking tasks complete
-- Track assumptions explicitly
+- Use `/security-review` for security-sensitive code
+- Track assumptions explicitly using TodoWrite
 - Note what's working and what isn't
+- Search online before major architectural decisions
 
 ### Before Ending
 - Run `/handoff` to capture session state
 - Update "Current State" section above
+- Update "Dogfooding Log" with patterns used
 - Commit work in progress
+- Run `scripts/metrics/collect-session-metrics.sh` if available
+
+### Security Checklist (for AI-generated code)
+Before committing, verify:
+- [ ] No hardcoded secrets or credentials
+- [ ] Input validation present where needed
+- [ ] No SQL/command/XSS injection vulnerabilities
+- [ ] Dependencies exist (not hallucinated names)
+- [ ] Error handling doesn't expose internal details
 
 ## Dogfooding Log
 
@@ -126,10 +140,30 @@ Track what patterns we use and their effectiveness:
 
 | Pattern | Used? | Effective? | Notes |
 |---------|-------|------------|-------|
-| CLAUDE.md | Yes | TBD | This file |
-| /plan command | Pending | TBD | |
+| CLAUDE.md | Yes | Yes | This file; essential for context |
+| /plan command | Yes | TBD | Used for framework development |
 | /verify command | Pending | TBD | |
 | /handoff command | Pending | TBD | |
+| /assumptions command | Pending | TBD | |
+| /security-review command | Yes | TBD | Created and documented |
 | Session notes | Pending | TBD | |
-| Pre-commit hooks | Pending | TBD | |
-| MCP memory | Pending | TBD | |
+| Pre-commit hooks | Pending | TBD | Template created |
+| MCP memory | Pending | TBD | Production server created |
+| Metrics collection | Pending | TBD | Script created |
+| TodoWrite tracking | Yes | Yes | Used throughout development |
+| Online research | Yes | Yes | Validated all claims |
+
+### Dogfooding Observations
+
+**What's Working:**
+- CLAUDE.md provides essential project context
+- TodoWrite helps maintain focus during complex multi-step tasks
+- Online research before recommendations prevents architectural mistakes
+
+**What Needs Improvement:**
+- [ ] Need to actually use /verify before completing tasks
+- [ ] Session handoffs not yet practiced
+- [ ] Metrics collection not yet active
+
+**Friction Observed During Development:**
+- (Add observations here as work continues)
