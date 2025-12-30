@@ -9,9 +9,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Real-world team usage metrics
+- npm registry publication
+- VitePress documentation site deployment
+- Real-world team usage metrics dashboard
 - Additional language-specific security rules
 - AI model version recommendations
+
+## [1.4.0] - 2025-12-30
+
+### Added
+
+#### Documentation & Guides
+
+- **Enterprise Deployment Guide** (`docs/guides/enterprise.md`)
+  - Complete enterprise architecture diagrams
+  - Three deployment models (Decentralized, Centralized, Federated)
+  - SOC 2 and GDPR compliance guidance
+  - Policy enforcement configuration
+  - Horizontal scaling with Kubernetes HPA
+  - Disaster recovery procedures with RTO/RPO targets
+  - Cost optimization recommendations
+
+- **VS Code Integration Guide** (`docs/guides/vscode-integration.md`)
+  - Workspace settings configuration
+  - Recommended extensions list
+  - Custom keyboard shortcuts
+  - Markdown snippets for decisions and sessions
+  - VS Code tasks for CLI commands
+  - Cursor-specific configuration
+
+- **Getting Started Guide** (`docs/getting-started.md`)
+  - Quick 5-minute setup walkthrough
+  - Preset comparison table
+  - Common workflow examples
+  - First AI session tutorial
+
+#### Tooling
+
+- **CLAUDE.md Health Monitor** (`scripts/health/claude-md-monitor.sh`)
+  - Automatic health checks for CLAUDE.md files
+  - 10+ validation rules (size, freshness, secrets, sections)
+  - Auto-fix mode for simple issues
+  - JSON output for CI/CD integration
+  - Placeholder text detection
+
+- **Friction Metrics System** (`scripts/metrics/friction-metrics.js`)
+  - Opt-in local metrics collection
+  - 14 event types for tracking AI interaction patterns
+  - Privacy-first design (no PII, local storage only)
+  - Report generation with calculated statistics
+  - Export to JSON/CSV formats
+
+#### GitHub Integration
+
+- **Issue Templates**
+  - Bug report template with component dropdown
+  - Feature request template with impact assessment
+  - Structured YAML-based forms
+
+- **Pull Request Template**
+  - Comprehensive checklist
+  - Security considerations section
+  - Change type classification
+
+### Changed
+
+- Updated VitePress navigation to v1.3.0
+- Added enterprise and VS Code guides to navigation
+- Updated documentation URLs from placeholder to actual GitHub repo
+
+### Fixed
+
+- Documentation URL placeholder in init.js (was "your-username")
+- GitHub URL in troubleshooting guide
 
 ## [1.3.0] - 2024-12-30
 
@@ -350,7 +420,9 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 3. **MCP Server**: If you were using a custom memory server, the new server is backwards-compatible but adds new features.
 
-[Unreleased]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v0.1.0...v1.0.0

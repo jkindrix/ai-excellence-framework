@@ -1,6 +1,6 @@
 {
   "name": "ai-excellence-framework",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A comprehensive framework for reducing friction in AI-assisted software development",
   "type": "module",
   "main": "src/index.js",
@@ -82,9 +82,12 @@
     ".claude/",
     "scripts/hooks/",
     "scripts/mcp/",
+    "scripts/health/",
+    "scripts/metrics/",
     "CLAUDE.md",
     "README.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "docs/QUICK-REFERENCE.md",
     "docs/MCP-SECURITY.md",
     "docs/IDE-INTEGRATION.md",
@@ -94,7 +97,9 @@
     "docs/RESEARCH-CITATIONS.md",
     "docs/TROUBLESHOOTING.md",
     "docs/TEAM-MEMORY-FEDERATION.md",
-    "docs/MODEL-SELECTION.md"
+    "docs/MODEL-SELECTION.md",
+    "docs/getting-started.md",
+    "docs/guides/"
   ],
   "dependencies": {
     "chalk": "^5.3.0",

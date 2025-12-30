@@ -185,7 +185,7 @@ Include:
 - Error message (full output)
 - Steps to reproduce
 
-**GitHub Issues:** https://github.com/your-username/ai-excellence-framework/issues
+**GitHub Issues:** https://github.com/ai-excellence-framework/ai-excellence-framework/issues
 
 ## Common Error Messages
 
@@ -239,3 +239,353 @@ pip install mcp
 mkdir -p ~/.claude/project-memories
 chmod 755 ~/.claude/project-memories
 ```
+
+## Advanced Troubleshooting
+
+### CI/CD Pipeline Issues
+
+#### Tests Pass Locally but Fail in CI
+
+**Problem:** Tests work on your machine but fail in GitHub Actions.
+
+**Common Causes:**
+
+1. **Node.js version mismatch**
+   ```yaml
+   # Ensure consistent version in .github/workflows
+   - uses: actions/setup-node@v4
+     with:
+       node-version: '20.x'
+   ```
+
+2. **Missing environment variables**
+   ```bash
+   # Check if tests depend on env vars
+   env | grep -E 'CI|NODE|NPM'
+   ```
+
+3. **File permission differences**
+   ```bash
+   # Make hooks executable in CI
+   chmod +x scripts/hooks/*.sh
+   ```
+
+4. **Path separator issues (Windows)**
+   ```javascript
+   // Use path.join instead of string concatenation
+   const configPath = path.join(projectRoot, '.claude', 'commands');
+   ```
+
+#### MCP Server Connection Timeout in CI
+
+**Problem:** MCP tests timeout in GitHub Actions.
+
+**Solutions:**
+
+1. Increase pytest timeout:
+   ```bash
+   python -m pytest tests/mcp/ -v --timeout=60
+   ```
+
+2. Check if MCP SDK is installed:
+   ```yaml
+   - name: Install MCP
+     run: pip install mcp
+   ```
+
+3. Use mock database for tests:
+   ```python
+   @pytest.fixture
+   def temp_db():
+       with tempfile.TemporaryDirectory() as tmpdir:
+           yield Path(tmpdir) / "test.db"
+   ```
+
+### Memory and Performance Issues
+
+#### High Memory Usage During Long Sessions
+
+**Problem:** Claude Code slows down or crashes after extended use.
+
+**Mitigations:**
+
+1. **Break context into smaller pieces**
+   - Split large CLAUDE.md into focused sections
+   - Use `/handoff` to create session boundaries
+
+2. **Clean up .tmp directory**
+   ```bash
+   rm -rf .tmp/*
+   ```
+
+3. **Reduce MCP database size**
+   ```bash
+   # Check database size
+   ls -lh ~/.claude/project-memories/
+
+   # Vacuum database
+   sqlite3 ~/.claude/project-memories/project.db "VACUUM;"
+   ```
+
+4. **Use explorer agent for large codebases**
+   - The explorer agent uses the faster Haiku model
+   - Better for broad searches
+
+#### Slow MCP Server Response
+
+**Problem:** MCP queries take too long.
+
+**Diagnosis:**
+
+```bash
+# Check database size
+du -h ~/.claude/project-memories/*.db
+
+# Check table sizes
+sqlite3 ~/.claude/project-memories/project.db "
+  SELECT name,
+         (SELECT COUNT(*) FROM sqlite_master WHERE name=t.name) as rows
+  FROM (SELECT 'decisions' as name UNION SELECT 'patterns' UNION SELECT 'context') t;
+"
+```
+
+**Solutions:**
+
+1. **Enable WAL mode** (already default in v1.4.0+)
+   ```python
+   conn.execute("PRAGMA journal_mode=WAL")
+   ```
+
+2. **Add indexes for frequent queries**
+   ```sql
+   CREATE INDEX IF NOT EXISTS idx_decisions_timestamp ON decisions(timestamp);
+   ```
+
+3. **Increase connection pool** (team deployments)
+   ```bash
+   export PROJECT_MEMORY_POOL_SIZE=10
+   ```
+
+### Cross-Platform Issues
+
+#### Line Ending Problems
+
+**Problem:** Files show as modified after checkout on Windows.
+
+**Solutions:**
+
+1. Configure git:
+   ```bash
+   git config core.autocrlf input  # Mac/Linux
+   git config core.autocrlf true   # Windows
+   ```
+
+2. Add .gitattributes:
+   ```
+   * text=auto eol=lf
+   *.sh text eol=lf
+   *.md text eol=lf
+   ```
+
+#### Shell Scripts Fail on Windows
+
+**Problem:** Bash scripts don't run on Windows.
+
+**Solutions:**
+
+1. Use Git Bash or WSL
+2. Use cross-platform npm scripts:
+   ```json
+   "scripts": {
+     "health": "node scripts/metrics/friction-metrics.js status"
+   }
+   ```
+
+3. Use shx for cross-platform shell commands:
+   ```bash
+   npm install shx --save-dev
+   ```
+
+### Security Scanner False Positives
+
+#### detect-secrets Flags Test Fixtures
+
+**Problem:** Secret detection flags example/test files.
+
+**Solution:** Add to `.secrets.baseline`:
+
+```json
+{
+  "files": {
+    "tests/fixtures/example-secrets.txt": [
+      {
+        "type": "Test fixture",
+        "is_verified": true
+      }
+    ]
+  }
+}
+```
+
+Or use inline allowlist:
+
+```bash
+API_KEY="test-key-12345"  # pragma: allowlist secret
+```
+
+#### Semgrep Overly Strict Rules
+
+**Problem:** Semgrep blocks legitimate code patterns.
+
+**Solution:** Create `.semgrep.yml` with rule overrides:
+
+```yaml
+rules:
+  - id: custom-override
+    patterns:
+      - pattern-not: $FUNC(...)
+    paths:
+      exclude:
+        - tests/
+        - examples/
+```
+
+### Debugging the Framework
+
+#### Enable Verbose Mode
+
+```bash
+# CLI verbose output
+npx ai-excellence-framework doctor --verbose
+
+# MCP server debug mode
+export PROJECT_MEMORY_DEBUG=true
+python scripts/mcp/project-memory-server.py
+```
+
+#### Check Framework State
+
+```bash
+# Full validation with verbose output
+npx ai-excellence-framework validate --verbose
+
+# List installed components
+ls -la .claude/commands/
+ls -la .claude/agents/
+ls -la scripts/hooks/
+```
+
+#### Inspect MCP Database
+
+```bash
+# Open database for inspection
+sqlite3 ~/.claude/project-memories/project.db
+
+# Common queries
+.tables
+SELECT COUNT(*) FROM decisions;
+SELECT * FROM decisions ORDER BY timestamp DESC LIMIT 5;
+.quit
+```
+
+### Recovery Procedures
+
+#### Corrupted CLAUDE.md
+
+**Problem:** CLAUDE.md has syntax errors or is unreadable.
+
+**Recovery:**
+
+1. Check git history:
+   ```bash
+   git log --oneline CLAUDE.md
+   git show HEAD~1:CLAUDE.md > CLAUDE.md.backup
+   ```
+
+2. Regenerate from template:
+   ```bash
+   npx ai-excellence-framework init --force
+   ```
+
+3. Use health monitor:
+   ```bash
+   ./scripts/health/claude-md-monitor.sh --fix
+   ```
+
+#### Corrupted MCP Database
+
+**Problem:** SQLite database is corrupted.
+
+**Recovery:**
+
+1. Backup current state:
+   ```bash
+   cp ~/.claude/project-memories/project.db ~/.claude/project-memories/project.db.corrupted
+   ```
+
+2. Try integrity check:
+   ```bash
+   sqlite3 ~/.claude/project-memories/project.db "PRAGMA integrity_check;"
+   ```
+
+3. Recover what's possible:
+   ```bash
+   sqlite3 ~/.claude/project-memories/project.db ".recover" | \
+     sqlite3 ~/.claude/project-memories/project-recovered.db
+   ```
+
+4. If recovery fails, reinitialize:
+   ```bash
+   rm ~/.claude/project-memories/project.db
+   # MCP will create new database on next start
+   ```
+
+#### Lost Configuration
+
+**Problem:** Configuration files are missing or corrupted.
+
+**Recovery:**
+
+```bash
+# Validate and auto-fix
+npx ai-excellence-framework validate --fix
+
+# Full reinitialization (preserves CLAUDE.md content)
+npx ai-excellence-framework init --preset standard --force
+```
+
+## Diagnostic Commands Reference
+
+| Command | Purpose |
+|---------|---------|
+| `npx ai-excellence doctor` | Full environment check |
+| `npx ai-excellence validate` | Configuration validation |
+| `npx ai-excellence validate --fix` | Auto-fix issues |
+| `./scripts/health/claude-md-monitor.sh` | CLAUDE.md health check |
+| `node scripts/metrics/friction-metrics.js status` | Metrics system status |
+| `python -c "import mcp; print('OK')"` | MCP SDK check |
+| `pre-commit run --all-files` | Run all hooks manually |
+
+## Getting Expert Help
+
+If you've tried the above solutions and still have issues:
+
+1. **Gather diagnostics:**
+   ```bash
+   npx ai-excellence doctor --verbose > diagnostics.txt 2>&1
+   node --version >> diagnostics.txt
+   python3 --version >> diagnostics.txt
+   ```
+
+2. **Create minimal reproduction:**
+   - Steps to reproduce
+   - Expected vs actual behavior
+   - Relevant configuration files
+
+3. **Open an issue:**
+   - [GitHub Issues](https://github.com/ai-excellence-framework/ai-excellence-framework/issues)
+   - Include diagnostics.txt
+   - Tag with appropriate labels
+
+4. **Community help:**
+   - [GitHub Discussions](https://github.com/ai-excellence-framework/ai-excellence-framework/discussions)

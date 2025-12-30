@@ -679,8 +679,9 @@ function printNextSteps(config) {
 
   console.log(
     chalk.gray(
-      '\n  Documentation: https://github.com/your-username/ai-excellence-framework'
+      '\n  Documentation: https://github.com/ai-excellence-framework/ai-excellence-framework'
     )
   );
+  console.log(chalk.gray('  Quick Reference: npx ai-excellence-framework --help'));
   console.log('');
 }

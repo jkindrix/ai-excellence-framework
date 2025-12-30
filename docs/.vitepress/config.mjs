@@ -37,10 +37,12 @@ export default defineConfig({
         ]
       },
       {
-        text: 'v1.2.0',
+        text: 'v1.3.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'Research Citations', link: '/RESEARCH-CITATIONS' },
+          { text: 'Enterprise Guide', link: '/guides/enterprise' },
+          { text: 'VS Code Integration', link: '/guides/vscode-integration' },
           { text: 'GitHub', link: 'https://github.com/ai-excellence-framework/ai-excellence-framework' }
         ]
       }
