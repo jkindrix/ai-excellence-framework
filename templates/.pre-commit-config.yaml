@@ -1,0 +1,212 @@
+# AI Excellence Framework - Pre-commit Configuration
+#
+# Comprehensive security and quality checks for AI-assisted development.
+# Install: pip install pre-commit && pre-commit install
+#
+# This configuration addresses AI-specific security risks:
+# - 45% of AI-generated code contains vulnerabilities (Veracode 2025)
+# - 86% fails XSS checks, 88% vulnerable to log injection (Qodo 2025)
+# - Slopsquatting attacks via hallucinated package names
+
+repos:
+  # =============================================================================
+  # SECURITY: Secrets Detection
+  # =============================================================================
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        # Include AI context files which might accidentally contain secrets
+        files: .*
+        exclude: \.secrets\.baseline$
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+        name: Detect hardcoded secrets with Gitleaks
+
+  # =============================================================================
+  # SECURITY: Dependency Scanning
+  # =============================================================================
+  # Python dependency security
+  - repo: https://github.com/pyupio/safety
+    rev: 2.3.5
+    hooks:
+      - id: safety
+        name: Check Python dependencies for vulnerabilities
+        files: (requirements.*\.txt|Pipfile\.lock|poetry\.lock)$
+
+  # Node.js dependency security (if npm/yarn present)
+  - repo: local
+    hooks:
+      - id: npm-audit
+        name: Check npm dependencies for vulnerabilities
+        entry: bash -c 'if [ -f package-lock.json ]; then npm audit --audit-level=high; fi'
+        language: system
+        files: package-lock\.json$
+        pass_filenames: false
+
+  # =============================================================================
+  # SECURITY: Static Analysis (Language-Specific)
+  # =============================================================================
+  # Python security with Bandit
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ['-c', 'pyproject.toml', '-r', '.']
+        additional_dependencies: ['bandit[toml]']
+        files: \.py$
+
+  # JavaScript/TypeScript security with ESLint security plugin
+  - repo: local
+    hooks:
+      - id: eslint-security
+        name: ESLint security rules
+        entry: bash -c 'if [ -f package.json ] && grep -q "eslint-plugin-security" package.json 2>/dev/null; then npx eslint --rule "security/*" .; fi'
+        language: system
+        files: \.(js|jsx|ts|tsx)$
+        pass_filenames: false
+
+  # =============================================================================
+  # SECURITY: AI-Specific Checks
+  # =============================================================================
+  - repo: local
+    hooks:
+      # Check for hallucinated package names (slopsquatting prevention)
+      - id: verify-npm-packages
+        name: Verify npm packages exist
+        entry: scripts/hooks/verify-deps.sh
+        language: script
+        files: package\.json$
+        pass_filenames: false
+
+      # Check for common AI-generated vulnerabilities
+      - id: ai-security-patterns
+        name: Check for AI-specific vulnerability patterns
+        entry: bash -c '
+          # Check for common AI-generated security issues
+          ISSUES=0
+
+          # Log injection (CWE-117) - 88% of AI code vulnerable
+          if grep -rn "console.log.*\$\|logger.*\$\|print.*\$" --include="*.ts" --include="*.js" --include="*.py" . 2>/dev/null | grep -v "node_modules" | grep -v ".git"; then
+            echo "⚠️  Potential log injection: user input in log statements"
+            ISSUES=$((ISSUES + 1))
+          fi
+
+          # eval() with user input
+          if grep -rn "eval\s*(" --include="*.ts" --include="*.js" --include="*.py" . 2>/dev/null | grep -v "node_modules" | grep -v ".git"; then
+            echo "🔴 CRITICAL: eval() usage detected - high injection risk"
+            ISSUES=$((ISSUES + 1))
+          fi
+
+          # Hardcoded credentials patterns
+          if grep -rniE "(password|secret|api_key|apikey|token)\s*=\s*[\"'\''][^\"'\'']{8,}" --include="*.ts" --include="*.js" --include="*.py" --include="*.go" . 2>/dev/null | grep -v "node_modules" | grep -v ".git" | grep -v "example" | grep -v "test"; then
+            echo "🔴 CRITICAL: Potential hardcoded credentials"
+            ISSUES=$((ISSUES + 1))
+          fi
+
+          if [ $ISSUES -gt 0 ]; then
+            echo ""
+            echo "Found $ISSUES potential security issues. Review before committing."
+            # exit 1  # Uncomment to block commits with issues
+          fi
+          exit 0
+        '
+        language: system
+        pass_filenames: false
+
+  # =============================================================================
+  # CODE QUALITY: Formatting
+  # =============================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: debug-statements  # Catch Python debug statements
+      - id: check-executables-have-shebangs
+
+  # Python formatting
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.8
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # JavaScript/TypeScript formatting
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [javascript, jsx, ts, tsx, json, yaml, markdown]
+
+  # Go formatting
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet
+      - id: go-imports
+
+  # Rust formatting
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: Rust format
+        entry: bash -c 'if command -v rustfmt &>/dev/null; then rustfmt --check .; fi'
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+  # =============================================================================
+  # CLAUDE.md Validation
+  # =============================================================================
+  - repo: local
+    hooks:
+      - id: claude-md-check
+        name: Validate CLAUDE.md structure
+        entry: bash -c '
+          if [ -f CLAUDE.md ]; then
+            REQUIRED=("## Overview" "## Tech Stack" "## Current State")
+            MISSING=0
+            for section in "${REQUIRED[@]}"; do
+              if ! grep -q "$section" CLAUDE.md; then
+                echo "❌ Missing required section: $section"
+                MISSING=$((MISSING + 1))
+              fi
+            done
+            if [ $MISSING -gt 0 ]; then
+              echo ""
+              echo "CLAUDE.md is missing $MISSING required sections."
+              echo "See team conventions for CLAUDE.md structure."
+              # exit 1  # Uncomment to enforce
+            fi
+          fi
+          exit 0
+        '
+        language: system
+        files: CLAUDE\.md$
+        pass_filenames: false
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+# Skip these during CI (handled by CI workflows)
+ci:
+  skip: [npm-audit, safety]
