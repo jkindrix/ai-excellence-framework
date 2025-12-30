@@ -12,8 +12,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - npm registry publication
 - VitePress documentation site deployment
 - Real-world team usage metrics dashboard
-- Additional language-specific security rules
-- AI model version recommendations
+
+## [1.5.0] - 2025-12-30
+
+### Added
+
+#### Multi-Tool Support Expansion
+
+- **5 new AI coding tools supported** (total: 10 tools)
+  - Google Gemini CLI (`GEMINI.md`)
+  - OpenAI Codex CLI (`.codex/`)
+  - Zed Editor (`.rules`)
+  - Sourcegraph Amp (`amp.toml`)
+  - Roo Code (`.roo/rules/`)
+- Updated `generate` command to support all 10 tools
+- Tool-specific configuration generators for each platform
+
+#### Language-Specific Security Rules
+
+- **Python security patterns** in `/security-review`
+  - SQL injection via string formatting
+  - Command injection via subprocess
+  - Pickle deserialization vulnerabilities
+  - Path traversal patterns
+- **Go security patterns**
+  - SQL injection patterns
+  - Command injection via os/exec
+  - Unchecked error handling
+  - Race conditions (TOCTOU)
+- **Rust security patterns**
+  - Unwrap/expect panic risks
+  - Integer overflow detection
+  - Unsafe block auditing
+  - SQL via format strings
+
+#### Model Selection Guidance
+
+- **Comprehensive model selection document** (`docs/MODEL-SELECTION.md`)
+  - Multi-provider coverage (Claude, GPT, Gemini)
+  - SWE-Bench 2025 benchmark comparisons
+  - Cost optimization matrix
+  - Tool-specific configuration examples
+  - Decision matrix for model selection
+
+#### Community Infrastructure
+
+- **CODE_OF_CONDUCT.md** - Contributor Covenant 2.1
+- **SECURITY.md** - Vulnerability reporting policy
+  - Supported versions table
+  - Response timeline commitments
+  - Security best practices
+
+#### GitHub Templates Enhancement
+
+- **Issue template config** with contact links
+- **Discussion templates**
+  - Questions template
+  - Ideas template
+  - Show & Tell template
+
+#### Benchmarks Documentation
+
+- **BENCHMARKS.md** - Performance measurements
+  - CLI performance benchmarks
+  - MCP server load testing results
+  - Security improvement metrics
+  - Productivity benchmarks
+  - Historical version comparison
+
+### Changed
+
+- **Getting started guide** enhanced with
+  - 30-second quick setup TL;DR
+  - ASCII workflow diagram
+  - First 10 minutes walkthrough
+  - Multi-tool support documentation
+- **Package description** updated to reflect 10-tool support
+- **Keywords** expanded for discoverability
+
+### Fixed
+
+- Excluded `__pycache__` from npm package
+- Added missing files to npm package (`CODE_OF_CONDUCT.md`, `SECURITY.md`, `BENCHMARKS.md`)
+
+### Security
+
+- Language-specific security patterns for Python, Go, and Rust
+- Enhanced pre-commit hook coverage
 
 ## [1.4.0] - 2025-12-30
 

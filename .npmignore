@@ -1,0 +1,36 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Development files
+.git/
+.github/
+tests/
+*.test.js
+*.test.sh
+*.test.py
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation build
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# Temporary files
+.tmp/
+*.log
+
+# Development configs
+.eslintrc.*
+eslint.config.js
+.prettierrc*
+.pre-commit-config.yaml
+
+# Coverage
+coverage/
+.nyc_output/
