@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  NODE_VERSION: '20.x'
+
 jobs:
   test-node:
     name: Node.js Tests
@@ -27,13 +30,23 @@ jobs:
         run: npm ci
 
       - name: Run linter
-        run: npm run lint || true
+        run: npm run lint
 
-      - name: Run tests
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run unit tests
         run: npm test
 
+      - name: Run integration tests
+        run: node --test tests/integration.test.js
+
+      - name: Run command tests
+        run: node --test tests/commands.test.js
+
       - name: Run tests with coverage
-        run: npm run test:coverage || true
+        run: npm run test:coverage
+        continue-on-error: true
 
   test-python:
     name: Python Tests

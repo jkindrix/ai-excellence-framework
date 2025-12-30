@@ -13,22 +13,30 @@
     "aix": "./bin/cli.js"
   },
   "scripts": {
-    "test": "node --test tests/*.test.js",
+    "test": "node --test tests/cli.test.js",
+    "test:integration": "node --test tests/integration.test.js",
+    "test:commands": "node --test tests/commands.test.js",
     "test:coverage": "node --test --experimental-test-coverage tests/*.test.js",
     "test:mcp": "python3 -m pytest tests/mcp/ -v",
+    "test:mcp:perf": "python3 -m pytest tests/mcp/test_performance.py -v",
     "test:scripts": "bash tests/scripts.test.sh",
-    "test:all": "npm run test && npm run test:mcp && npm run test:scripts",
+    "test:all": "npm run test && npm run test:integration && npm run test:commands && npm run test:mcp && npm run test:scripts",
     "lint": "eslint src/ bin/",
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write \"**/*.{js,json,md,yaml,yml}\"",
     "format:check": "prettier --check \"**/*.{js,json,md,yaml,yml}\"",
     "validate": "npm run lint && npm run format:check && npm test",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "prepublishOnly": "npm run validate && npm run test:all",
     "prepare": "node scripts/prepare.js",
     "postinstall": "node scripts/postinstall.js || true"
   },
   "keywords": [
     "ai",
     "claude",
+    "claude-code",
     "coding-assistant",
     "developer-tools",
     "friction-reduction",
@@ -36,17 +44,25 @@
     "model-context-protocol",
     "productivity",
     "security",
-    "claude-code"
+    "ai-code-review",
+    "context-engineering",
+    "llm",
+    "developer-experience",
+    "anthropic"
   ],
-  "author": "",
+  "author": "AI Excellence Framework Contributors",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/ai-excellence-framework.git"
+    "url": "git+https://github.com/ai-excellence-framework/ai-excellence-framework.git"
   },
-  "homepage": "https://github.com/your-username/ai-excellence-framework#readme",
+  "homepage": "https://ai-excellence-framework.github.io/",
   "bugs": {
-    "url": "https://github.com/your-username/ai-excellence-framework/issues"
+    "url": "https://github.com/ai-excellence-framework/ai-excellence-framework/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/ai-excellence-framework"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -59,7 +75,10 @@
     "scripts/hooks/",
     "scripts/mcp/",
     "CLAUDE.md",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "docs/QUICK-REFERENCE.md",
+    "docs/MCP-SECURITY.md"
   ],
   "dependencies": {
     "chalk": "^5.3.0",
@@ -70,7 +89,8 @@
   },
   "devDependencies": {
     "eslint": "^9.17.0",
-    "prettier": "^3.4.2"
+    "prettier": "^3.4.2",
+    "vitepress": "^1.5.0"
   },
   "peerDependencies": {
     "pre-commit": ">=3.0.0"
