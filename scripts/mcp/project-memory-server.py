@@ -10,6 +10,9 @@ Features:
 - Input validation and sanitization
 - Proper error handling
 - Logging for debugging
+- Export/import for backup and portability
+- Health check endpoint
+- Version tracking
 
 Usage:
     python project-memory-server.py
@@ -19,6 +22,8 @@ Configuration via environment:
     PROJECT_MEMORY_MAX_DECISIONS: Maximum stored decisions (default: 1000)
     PROJECT_MEMORY_MAX_PATTERNS: Maximum stored patterns (default: 100)
 """
+
+VERSION = "1.0.0"
 
 import json
 import logging
@@ -270,6 +275,196 @@ class ProjectMemoryDB:
             }
             return stats
 
+    def export_all(self) -> dict:
+        """Export all data as JSON-serializable dictionary."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+
+            # Export decisions
+            decisions = [dict(row) for row in
+                        conn.execute("SELECT * FROM decisions ORDER BY timestamp").fetchall()]
+
+            # Export patterns
+            patterns = [dict(row) for row in
+                       conn.execute("SELECT * FROM patterns ORDER BY name").fetchall()]
+
+            # Export context
+            context = {row[0]: row[1] for row in
+                      conn.execute("SELECT key, value FROM context").fetchall()}
+
+            return {
+                "version": VERSION,
+                "exported_at": datetime.now().isoformat(),
+                "project": Path.cwd().name,
+                "data": {
+                    "decisions": decisions,
+                    "patterns": patterns,
+                    "context": context
+                },
+                "stats": self.get_stats()
+            }
+
+    def import_data(self, data: dict, merge: bool = True) -> dict:
+        """
+        Import data from exported JSON.
+
+        Args:
+            data: Exported data dictionary
+            merge: If True, merge with existing data. If False, replace all.
+
+        Returns:
+            Dict with import statistics
+        """
+        if "data" not in data:
+            raise ValueError("Invalid export format: missing 'data' key")
+
+        stats = {"decisions": 0, "patterns": 0, "context": 0, "skipped": 0}
+
+        with sqlite3.connect(self.db_path) as conn:
+            if not merge:
+                # Clear existing data
+                conn.execute("DELETE FROM decisions")
+                conn.execute("DELETE FROM patterns")
+                conn.execute("DELETE FROM context")
+                conn.commit()
+
+            # Import decisions
+            for d in data["data"].get("decisions", []):
+                try:
+                    conn.execute("""
+                        INSERT INTO decisions (timestamp, decision, rationale, context, alternatives)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (
+                        d.get("timestamp", datetime.now().isoformat()),
+                        sanitize_input(d.get("decision", "")),
+                        sanitize_input(d.get("rationale", "")),
+                        sanitize_input(d.get("context", "")),
+                        sanitize_input(d.get("alternatives", ""))
+                    ))
+                    stats["decisions"] += 1
+                except Exception:
+                    stats["skipped"] += 1
+
+            # Import patterns
+            for p in data["data"].get("patterns", []):
+                try:
+                    name = p.get("name", "")
+                    if validate_key(name):
+                        conn.execute("""
+                            INSERT OR REPLACE INTO patterns (name, description, example, when_to_use, updated_at)
+                            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        """, (
+                            name,
+                            sanitize_input(p.get("description", "")),
+                            sanitize_input(p.get("example", "")),
+                            sanitize_input(p.get("when_to_use", ""))
+                        ))
+                        stats["patterns"] += 1
+                    else:
+                        stats["skipped"] += 1
+                except Exception:
+                    stats["skipped"] += 1
+
+            # Import context
+            for key, value in data["data"].get("context", {}).items():
+                try:
+                    if validate_key(key):
+                        conn.execute("""
+                            INSERT OR REPLACE INTO context (key, value, updated_at)
+                            VALUES (?, ?, CURRENT_TIMESTAMP)
+                        """, (key, sanitize_input(value)))
+                        stats["context"] += 1
+                    else:
+                        stats["skipped"] += 1
+                except Exception:
+                    stats["skipped"] += 1
+
+            conn.commit()
+
+        return stats
+
+    def health_check(self) -> dict:
+        """Perform health check on the database."""
+        health = {
+            "status": "healthy",
+            "version": VERSION,
+            "checks": {}
+        }
+
+        try:
+            # Check database connectivity
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("SELECT 1")
+            health["checks"]["database_connection"] = "ok"
+        except Exception as e:
+            health["status"] = "unhealthy"
+            health["checks"]["database_connection"] = f"failed: {str(e)}"
+
+        try:
+            # Check database integrity
+            with sqlite3.connect(self.db_path) as conn:
+                result = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                health["checks"]["database_integrity"] = result
+                if result != "ok":
+                    health["status"] = "degraded"
+        except Exception as e:
+            health["status"] = "unhealthy"
+            health["checks"]["database_integrity"] = f"failed: {str(e)}"
+
+        try:
+            # Check write capability
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("INSERT INTO context (key, value) VALUES ('_health_check', 'test')")
+                conn.execute("DELETE FROM context WHERE key = '_health_check'")
+                conn.commit()
+            health["checks"]["write_capability"] = "ok"
+        except Exception as e:
+            health["status"] = "unhealthy"
+            health["checks"]["write_capability"] = f"failed: {str(e)}"
+
+        # Check capacity
+        stats = self.get_stats()
+        decision_usage = stats["decisions"] / stats["limits"]["max_decisions"] * 100
+        pattern_usage = stats["patterns"] / stats["limits"]["max_patterns"] * 100
+
+        health["checks"]["capacity"] = {
+            "decisions_used_percent": round(decision_usage, 1),
+            "patterns_used_percent": round(pattern_usage, 1)
+        }
+
+        if decision_usage > 90 or pattern_usage > 90:
+            health["status"] = "degraded"
+            health["checks"]["capacity"]["warning"] = "Approaching capacity limits"
+
+        health["db_path"] = str(self.db_path)
+
+        return health
+
+    def purge_all(self) -> dict:
+        """Purge all data from the database. Returns counts of deleted items."""
+        with sqlite3.connect(self.db_path) as conn:
+            decisions = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+            patterns = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
+            context = conn.execute("SELECT COUNT(*) FROM context").fetchone()[0]
+
+            conn.execute("DELETE FROM decisions")
+            conn.execute("DELETE FROM patterns")
+            conn.execute("DELETE FROM context")
+            conn.commit()
+
+            # Vacuum to reclaim space
+            conn.execute("VACUUM")
+
+        logger.warning(f"Purged all data: {decisions} decisions, {patterns} patterns, {context} context keys")
+
+        return {
+            "deleted": {
+                "decisions": decisions,
+                "patterns": patterns,
+                "context": context
+            }
+        }
+
 
 def get_db_path() -> Path:
     """Determine database path based on current project."""
@@ -427,6 +622,55 @@ async def list_tools():
                 "type": "object",
                 "properties": {}
             }
+        ),
+        Tool(
+            name="export_memory",
+            description="Export all stored memory to JSON format for backup or portability.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="import_memory",
+            description="Import memory from a previously exported JSON backup.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "string",
+                        "description": "JSON string of exported memory data"
+                    },
+                    "merge": {
+                        "type": "boolean",
+                        "description": "If true, merge with existing data. If false, replace all.",
+                        "default": True
+                    }
+                },
+                "required": ["data"]
+            }
+        ),
+        Tool(
+            name="health_check",
+            description="Perform a health check on the memory database.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="purge_memory",
+            description="Delete ALL stored memory. Use with caution! Requires confirmation.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "confirm": {
+                        "type": "string",
+                        "description": "Must be 'CONFIRM_PURGE' to proceed"
+                    }
+                },
+                "required": ["confirm"]
+            }
         )
     ]
 
@@ -566,6 +810,89 @@ async def call_tool(name: str, arguments: dict) -> list:
             output += f"**Context keys**: {stats['context_keys']} / {stats['limits']['max_context_keys']}\n"
             output += f"**Database size**: {stats['db_size_bytes'] / 1024:.1f} KB\n"
             output += f"\n**Database location**: `{get_db_path()}`\n"
+
+            return [TextContent(type="text", text=output)]
+
+        elif name == "export_memory":
+            export_data = database.export_all()
+            json_output = json.dumps(export_data, indent=2, default=str)
+
+            output = "## Memory Export\n\n"
+            output += f"Exported at: {export_data['exported_at']}\n\n"
+            output += f"- Decisions: {len(export_data['data']['decisions'])}\n"
+            output += f"- Patterns: {len(export_data['data']['patterns'])}\n"
+            output += f"- Context keys: {len(export_data['data']['context'])}\n\n"
+            output += "### JSON Data\n```json\n"
+            output += json_output
+            output += "\n```\n"
+
+            logger.info("Exported all memory data")
+            return [TextContent(type="text", text=output)]
+
+        elif name == "import_memory":
+            data_str = arguments.get("data", "")
+            merge = arguments.get("merge", True)
+
+            if not data_str:
+                return [TextContent(type="text", text="❌ Error: data is required")]
+
+            try:
+                import_data = json.loads(data_str)
+            except json.JSONDecodeError as e:
+                return [TextContent(type="text", text=f"❌ Error: Invalid JSON - {str(e)}")]
+
+            try:
+                stats = database.import_data(import_data, merge=merge)
+
+                output = "## Memory Import Complete\n\n"
+                output += f"**Mode**: {'Merge' if merge else 'Replace'}\n\n"
+                output += f"- Decisions imported: {stats['decisions']}\n"
+                output += f"- Patterns imported: {stats['patterns']}\n"
+                output += f"- Context keys imported: {stats['context']}\n"
+                if stats['skipped'] > 0:
+                    output += f"- Skipped (invalid): {stats['skipped']}\n"
+
+                logger.info(f"Imported memory: {stats}")
+                return [TextContent(type="text", text=output)]
+            except ValueError as e:
+                return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
+
+        elif name == "health_check":
+            health = database.health_check()
+
+            output = f"## Health Check: {health['status'].upper()}\n\n"
+            output += f"**Version**: {health['version']}\n"
+            output += f"**Database**: `{health['db_path']}`\n\n"
+            output += "### Checks\n"
+
+            for check_name, result in health["checks"].items():
+                if isinstance(result, dict):
+                    output += f"- **{check_name}**:\n"
+                    for k, v in result.items():
+                        output += f"  - {k}: {v}\n"
+                else:
+                    icon = "✓" if result == "ok" else "⚠️"
+                    output += f"- {icon} **{check_name}**: {result}\n"
+
+            return [TextContent(type="text", text=output)]
+
+        elif name == "purge_memory":
+            confirm = arguments.get("confirm", "")
+
+            if confirm != "CONFIRM_PURGE":
+                return [TextContent(
+                    type="text",
+                    text="⚠️ To purge all memory, you must pass confirm='CONFIRM_PURGE'\n\n"
+                         "This will permanently delete ALL decisions, patterns, and context!"
+                )]
+
+            result = database.purge_all()
+
+            output = "## Memory Purged ⚠️\n\n"
+            output += f"Deleted:\n"
+            output += f"- Decisions: {result['deleted']['decisions']}\n"
+            output += f"- Patterns: {result['deleted']['patterns']}\n"
+            output += f"- Context keys: {result['deleted']['context']}\n"
 
             return [TextContent(type="text", text=output)]
 
