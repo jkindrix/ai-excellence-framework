@@ -37,7 +37,7 @@ export default defineConfig({
         ]
       },
       {
-        text: 'v1.3.0',
+        text: 'v1.4.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'Research Citations', link: '/RESEARCH-CITATIONS' },
@@ -160,7 +160,7 @@ export default defineConfig({
     // Footer
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2024-present AI Excellence Framework Contributors'
+      copyright: 'Copyright © 2024-2025 AI Excellence Framework Contributors'
     },
 
     // Edit link

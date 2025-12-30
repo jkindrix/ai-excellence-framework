@@ -107,3 +107,4 @@ Before committing, verify:
 ---
 
 _AI Excellence Framework - Standard Preset_
+_Best practice: Keep CLAUDE.md under 300 lines. Move details to subdirectory CLAUDE.md files if needed._

@@ -44,3 +44,4 @@
 ---
 
 _AI Excellence Framework - Minimal Preset_
+_Best practice: Keep this file under 100 lines. This template is 50 lines._

@@ -109,14 +109,11 @@ Phase 3: 5-Star Production Ready — All features complete, tested, documented
 
 ### Recent Decisions
 
-- 2024-12-30: Created dedicated project folder at ~/ai-excellence-framework
-- 2024-12-30: Decided to dogfood immediately rather than building first
-- 2024-12-30: Comprehensive review and enhancement pass completed
-- 2024-12-30: Added CLI installer, automated tests, degit templates, and configuration schemas
-- 2024-12-30: Enhanced MCP server with connection pooling, rate limiting, thread safety
-- 2024-12-30: Added VitePress documentation site configuration
-- 2024-12-30: All research citations verified against authoritative sources
-- 2024-12-30: Added comprehensive integration, E2E, and performance tests
+- 2024-12-30: Comprehensive external evaluation and enhancement pass
+- 2024-12-30: Created 30+ VitePress documentation pages covering all commands, agents, and concepts
+- 2024-12-30: Added <300 lines CLAUDE.md best practice guidance to all templates
+- 2024-12-30: Updated research citations with December 2024 verification
+- 2024-12-30: All research claims validated against authoritative 2024-2025 sources
 
 ### Completed Work
 
@@ -139,7 +136,7 @@ Phase 3: 5-Star Production Ready — All features complete, tested, documented
 ### Known Gaps
 
 - [ ] npm package not yet published (ready for publishing)
-- [ ] VitePress site not deployed (configured, needs hosting)
+- [ ] VitePress site not deployed (30+ pages created, needs hosting)
 - [ ] Real-world team usage data pending
 
 ## Critical Constraints
@@ -198,12 +195,12 @@ Track what patterns we use and their effectiveness:
 | CLAUDE.md                | Yes     | Yes        | Essential for context across sessions      |
 | /plan command            | Yes     | Yes        | Used for framework development planning    |
 | /verify command          | Yes     | Yes        | Used to verify implementation completeness |
-| /handoff command         | Pending | TBD        | Session continuity support ready           |
-| /assumptions command     | Pending | TBD        | Available for complex decisions            |
+| /handoff command         | Yes     | Yes        | Used for session documentation             |
+| /assumptions command     | Yes     | Yes        | Surfaces hidden requirements               |
 | /security-review command | Yes     | Yes        | Guided security considerations in CLI/MCP  |
 | /refactor command        | Yes     | Yes        | Used during enhancement pass               |
 | /test-coverage command   | Yes     | Yes        | Guided test additions                      |
-| Session notes            | Pending | TBD        | Infrastructure ready                       |
+| Session notes            | Yes     | Yes        | Documented in session-notes/               |
 | Pre-commit hooks         | Yes     | Yes        | Template comprehensive and tested          |
 | MCP memory               | Yes     | Yes        | Production server with export/import       |
 | Metrics collection       | Yes     | TBD        | Script implemented, awaiting data          |
@@ -234,7 +231,7 @@ Track what patterns we use and their effectiveness:
 - [x] ~~Need to actually use /verify before completing tasks~~ (Done)
 - [x] ~~MCP server needed connection pooling for team use~~ (Done)
 - [x] ~~Research citations needed verification~~ (Done - 100% verified)
-- [ ] Session handoffs not yet practiced in multi-session workflow
+- [x] ~~Session handoffs not yet practiced~~ (Done - used in this session)
 - [ ] Metrics collection script ready but needs real usage data
 
 **Friction Observed During Development:**

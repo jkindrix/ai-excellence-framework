@@ -191,3 +191,5 @@ Track what patterns we use and their effectiveness:
 ---
 
 _AI Excellence Framework - Full Preset_
+_Best practice: Keep CLAUDE.md under 300 lines. This template is ~200 lines._
+_Move detailed conventions to subdirectory CLAUDE.md files as the project grows._

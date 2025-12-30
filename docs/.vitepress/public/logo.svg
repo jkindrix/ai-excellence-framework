@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Outer circle -->
+  <circle cx="50" cy="50" r="45" fill="url(#grad)" />
+  <!-- AI symbol: stylized neural network nodes -->
+  <circle cx="50" cy="30" r="6" fill="white" />
+  <circle cx="30" cy="55" r="6" fill="white" />
+  <circle cx="70" cy="55" r="6" fill="white" />
+  <circle cx="50" cy="70" r="6" fill="white" />
+  <!-- Connections -->
+  <line x1="50" y1="36" x2="35" y2="50" stroke="white" stroke-width="2" />
+  <line x1="50" y1="36" x2="65" y2="50" stroke="white" stroke-width="2" />
+  <line x1="35" y1="60" x2="50" y2="64" stroke="white" stroke-width="2" />
+  <line x1="65" y1="60" x2="50" y2="64" stroke="white" stroke-width="2" />
+  <line x1="30" y1="55" x2="70" y2="55" stroke="white" stroke-width="2" opacity="0.5" />
+  <!-- Star/excellence accent -->
+  <circle cx="75" cy="25" r="8" fill="#FCD34D" />
+  <text x="75" y="29" text-anchor="middle" fill="#1F2937" font-size="12" font-weight="bold">★</text>
+</svg>
