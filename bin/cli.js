@@ -74,7 +74,7 @@ program
   .action(doctorCommand);
 
 // Error handling
-program.exitOverride((err) => {
+program.exitOverride(err => {
   if (err.code === 'commander.help') {
     process.exit(0);
   }

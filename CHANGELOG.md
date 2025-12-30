@@ -7,26 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- Real-world team usage metrics
+- Additional language-specific security rules
+- AI model version recommendations
+
+## [1.1.0] - 2024-12-30
+
 ### Added
-- Comprehensive integration test suite for CLI commands
-- End-to-end tests for slash command validation
-- Performance benchmarks for MCP server
-- VitePress documentation site configuration
-- MCP security documentation and hardening guide
-- Connection pooling support for team MCP deployments
-- Automated semantic-release integration
-- Pre-publish validation script
+
+#### Documentation
+- **IDE Integration Guide** (`docs/IDE-INTEGRATION.md`) - Complete setup for VS Code, Cursor, JetBrains, Neovim, Emacs
+- **SAST Integration Guide** (`docs/SAST-INTEGRATION.md`) - Semgrep, CodeQL, Bandit setup with custom AI-code rules
+- **Metrics Visualization Guide** (`docs/METRICS-VISUALIZATION.md`) - Dashboard setup for Grafana, terminal, HTML reports
+- **Team Memory Federation Guide** (`docs/TEAM-MEMORY-FEDERATION.md`) - Multi-developer memory sharing patterns
+
+#### CLI Enhancements
+- **Structured Error System** (`src/errors.js`) - 40+ error codes with categories, suggestions, and documentation links
+- **TypeScript Definitions** (`types/index.d.ts`) - Full type definitions for programmatic usage
+- Error codes follow pattern `AIX-{CATEGORY}-{NUMBER}` for easy tracking
+- Exit codes aligned with Unix conventions and sysexits.h
+
+#### CI/CD Improvements
+- **CodeQL Analysis** - Security scanning with extended queries
+- **Semgrep Integration** - OWASP Top 10 and secrets detection
+- **Coverage Thresholds** - 70% Node.js, 60% Python minimum coverage enforcement
+- **Documentation Build** - Automated VitePress builds with artifact upload
+- **Shellcheck** - Linting for all shell scripts
+- **Package Verification** - Slopsquatting detection in CI
+
+#### Configuration
+- Updated VitePress configuration with all new documentation pages
+- Sitemap generation for SEO
+- Enhanced meta tags for social sharing
 
 ### Changed
-- Enhanced MCP server with production-grade patterns
-- Updated all research citations with verification dates
-- Improved CI/CD pipeline with comprehensive checks
-- Streamlined mitigations document with better organization
+- **Version bump** to 1.1.0
+- **Package exports** now include error system and types
+- **src/index.js** exports `COMMANDS`, `AGENTS`, `PRESET_CONFIGS`, and utility functions
+- Enhanced preset configurations with metrics and federation options
+- VitePress navigation updated with Guides dropdown
 
 ### Fixed
-- Verified all external research citations
-- Added missing author field in package.json
-- Updated repository URLs to actual values
+- CI pipeline now fails on critical validation errors (was continue-on-error)
+- Proper exit codes for CLI commands based on error type
 
 ## [1.0.0] - 2024-12-30
 
@@ -67,7 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Input validation and sanitization
 - Export/import for backup and portability
 - Health check endpoint
-- Version tracking
+- Connection pooling for team deployments
+- Rate limiting protection
+- Thread-safe operations with WAL mode
 
 #### Security Features
 - Pre-commit hooks for secrets detection (Yelp detect-secrets)
@@ -75,6 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLAUDE.md validation hook
 - Critical TODO detection
 - OWASP Top 10 aligned security review
+- MCP Security documentation
 
 #### Git Hooks
 - `post-edit.sh` - Auto-format after file edits
@@ -90,16 +117,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Testing
 - CLI unit tests using Node.js native test runner
+- Integration tests for complete workflows
+- Command tests for CLI functionality
 - MCP server tests using pytest
+- Performance benchmarks for MCP server
 - Shell script validation tests
 - Security pattern detection tests
 
 #### CI/CD
 - GitHub Actions workflow for testing
-- Multi-Node.js version matrix
-- Python MCP server testing
+- Multi-Node.js version matrix (18.x, 20.x, 22.x)
+- Multi-Python version matrix (3.9-3.12)
 - Pre-commit hook validation
 - Release automation workflow
+- VitePress documentation site configuration
 
 ### Research Validation
 All statistics and claims verified against authoritative sources:
@@ -134,6 +165,7 @@ This project follows [Semantic Versioning](https://semver.org/):
   - New hooks
   - New presets
   - Enhanced documentation
+  - New utility exports
 
 - **PATCH** version for backwards-compatible fixes:
   - Bug fixes
@@ -143,6 +175,22 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 ## Migration Guides
 
+### Upgrading from 1.0 to 1.1
+
+1. **New Exports Available**: The framework now exports error handling utilities:
+   ```javascript
+   import { createError, FrameworkError, EXIT_CODES } from 'ai-excellence-framework';
+   ```
+
+2. **TypeScript Support**: Full type definitions available:
+   ```typescript
+   import type { InitOptions, ValidateResult } from 'ai-excellence-framework';
+   ```
+
+3. **CI Updates**: Consider adding the new security scanning workflows from `docs/SAST-INTEGRATION.md`
+
+4. **IDE Configuration**: See `docs/IDE-INTEGRATION.md` for recommended workspace settings
+
 ### Upgrading from 0.x to 1.0
 
 1. **CLAUDE.md Changes**: The required sections have been standardized. Run `npx ai-excellence-framework validate` to check compliance.
@@ -151,6 +199,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 3. **MCP Server**: If you were using a custom memory server, the new server is backwards-compatible but adds new features.
 
-[Unreleased]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/releases/tag/v0.1.0

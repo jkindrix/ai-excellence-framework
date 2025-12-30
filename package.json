@@ -1,12 +1,17 @@
 {
   "name": "ai-excellence-framework",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A comprehensive framework for reducing friction in AI-assisted software development",
   "type": "module",
   "main": "src/index.js",
+  "types": "types/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./cli": "./bin/cli.js"
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./cli": "./bin/cli.js",
+    "./errors": "./src/errors.js"
   },
   "bin": {
     "ai-excellence": "./bin/cli.js",
@@ -70,6 +75,7 @@
   "files": [
     "bin/",
     "src/",
+    "types/",
     "templates/",
     ".claude/",
     "scripts/hooks/",
@@ -78,17 +84,21 @@
     "README.md",
     "CHANGELOG.md",
     "docs/QUICK-REFERENCE.md",
-    "docs/MCP-SECURITY.md"
+    "docs/MCP-SECURITY.md",
+    "docs/IDE-INTEGRATION.md",
+    "docs/SAST-INTEGRATION.md",
+    "docs/METRICS-VISUALIZATION.md"
   ],
   "dependencies": {
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "enquirer": "^2.4.1",
-    "ora": "^8.0.1",
-    "fs-extra": "^11.2.0"
+    "fs-extra": "^11.2.0",
+    "ora": "^8.0.1"
   },
   "devDependencies": {
     "eslint": "^9.17.0",
+    "globals": "^16.5.0",
     "prettier": "^3.4.2",
     "vitepress": "^1.5.0"
   },

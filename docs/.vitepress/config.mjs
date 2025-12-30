@@ -24,17 +24,22 @@ export default defineConfig({
       { text: 'Documentation', link: '/docs/' },
       { text: 'Commands', link: '/commands/' },
       {
-        text: 'Resources',
+        text: 'Guides',
         items: [
-          { text: 'Quick Reference', link: '/quick-reference' },
-          { text: 'Model Selection', link: '/model-selection' },
-          { text: 'Troubleshooting', link: '/troubleshooting' }
+          { text: 'Quick Reference', link: '/QUICK-REFERENCE' },
+          { text: 'IDE Integration', link: '/IDE-INTEGRATION' },
+          { text: 'Security Scanning', link: '/SAST-INTEGRATION' },
+          { text: 'Metrics Dashboard', link: '/METRICS-VISUALIZATION' },
+          { text: 'Team Memory', link: '/TEAM-MEMORY-FEDERATION' },
+          { text: 'Model Selection', link: '/MODEL-SELECTION' },
+          { text: 'Troubleshooting', link: '/TROUBLESHOOTING' }
         ]
       },
       {
-        text: 'v1.0.0',
+        text: 'v1.1.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
+          { text: 'Research Citations', link: '/RESEARCH-CITATIONS' },
           { text: 'GitHub', link: 'https://github.com/ai-excellence-framework/ai-excellence-framework' }
         ]
       }
@@ -77,8 +82,8 @@ export default defineConfig({
           items: [
             { text: 'Overview', link: '/docs/security/' },
             { text: 'AI-Specific Vulnerabilities', link: '/docs/security/ai-vulns' },
-            { text: 'MCP Security', link: '/docs/security/mcp' },
-            { text: 'Pre-commit Hooks', link: '/docs/security/hooks' },
+            { text: 'MCP Security', link: '/MCP-SECURITY' },
+            { text: 'SAST Integration', link: '/SAST-INTEGRATION' },
             { text: 'Security Checklist', link: '/docs/security/checklist' }
           ]
         },
@@ -86,9 +91,9 @@ export default defineConfig({
           text: 'Team Adoption',
           items: [
             { text: 'Team Setup', link: '/docs/team/' },
-            { text: 'Shared Memory', link: '/docs/team/memory' },
+            { text: 'Memory Federation', link: '/TEAM-MEMORY-FEDERATION' },
             { text: 'Convention Enforcement', link: '/docs/team/conventions' },
-            { text: 'Metrics & Insights', link: '/docs/team/metrics' }
+            { text: 'Metrics & Insights', link: '/METRICS-VISUALIZATION' }
           ]
         }
       ],
@@ -114,6 +119,22 @@ export default defineConfig({
             { text: 'Explorer', link: '/commands/agents/explorer' },
             { text: 'Reviewer', link: '/commands/agents/reviewer' },
             { text: 'Tester', link: '/commands/agents/tester' }
+          ]
+        }
+      ],
+      '/': [
+        {
+          text: 'Guides',
+          items: [
+            { text: 'Quick Reference', link: '/QUICK-REFERENCE' },
+            { text: 'IDE Integration', link: '/IDE-INTEGRATION' },
+            { text: 'SAST Integration', link: '/SAST-INTEGRATION' },
+            { text: 'Metrics Dashboard', link: '/METRICS-VISUALIZATION' },
+            { text: 'Team Memory', link: '/TEAM-MEMORY-FEDERATION' },
+            { text: 'MCP Security', link: '/MCP-SECURITY' },
+            { text: 'Model Selection', link: '/MODEL-SELECTION' },
+            { text: 'Troubleshooting', link: '/TROUBLESHOOTING' },
+            { text: 'Research Citations', link: '/RESEARCH-CITATIONS' }
           ]
         }
       ]
@@ -150,11 +171,11 @@ export default defineConfig({
       provider: 'local'
     },
 
-    // Carbon ads (optional - for sustainability)
-    // carbonAds: {
-    //   code: 'your-carbon-code',
-    //   placement: 'your-carbon-placement'
-    // }
+    // Outline depth
+    outline: {
+      level: [2, 3],
+      label: 'On this page'
+    }
   },
 
   // Markdown configuration
@@ -173,6 +194,15 @@ export default defineConfig({
     ['meta', { name: 'og:type', content: 'website' }],
     ['meta', { name: 'og:locale', content: 'en' }],
     ['meta', { name: 'og:site_name', content: 'AI Excellence Framework' }],
-    ['meta', { name: 'twitter:card', content: 'summary_large_image' }]
-  ]
+    ['meta', { name: 'og:title', content: 'AI Excellence Framework' }],
+    ['meta', { name: 'og:description', content: 'A comprehensive framework for reducing friction in AI-assisted software development' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:title', content: 'AI Excellence Framework' }],
+    ['meta', { name: 'twitter:description', content: 'Reduce friction in AI-assisted development' }]
+  ],
+
+  // Sitemap
+  sitemap: {
+    hostname: 'https://ai-excellence-framework.github.io/'
+  }
 })
