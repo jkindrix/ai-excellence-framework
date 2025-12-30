@@ -36,7 +36,27 @@
 - `/verify` with skeptical falsification to catch overconfident errors
 - Explicit handoffs at session boundaries
 
-**Read the full document for:** Detailed descriptions of each friction point with mitigations, especially Section 8 (Coherence Illusion) if you read nothing else.
+**Read the full document for:** Detailed descriptions of each friction point with mitigations, especially Section 8 (The Coherence Illusion) if you read nothing else.
+
+---
+
+## Empirical Context
+
+*These statistics from 2024-2025 research provide context for the friction points described below.*
+
+| Friction Category | Measured Impact | Source |
+|-------------------|-----------------|--------|
+| **Context loss** | 65% of developers cite as #1 AI issue | MIT Technology Review 2025 |
+| **Security vulnerabilities in AI code** | 40%+ of generated code has flaws | Endor Labs Research 2025 |
+| **XSS vulnerabilities** | AI code is 2.74× more likely | Apiiro Research 2025 |
+| **Privilege escalation** | 322% more common in AI code | Apiiro Research 2025 |
+| **Log injection (CWE-117)** | 88% baseline vulnerability rate | OWASP AI Security 2025 |
+| **Package hallucination** | ~20% of suggestions don't exist | BleepingComputer 2025 |
+| **Productivity impact (experienced devs)** | 19% slowdown without structure | METR Study 2025 |
+| **Productivity impact (with discipline)** | 21-26% improvement | Google/Microsoft RCTs |
+| **Developer AI adoption** | 85% use AI tools regularly | JetBrains 2025 |
+
+**Key insight:** The productivity delta between "disciplined" and "undisciplined" AI use is ~40-45%. The friction points below explain why undisciplined use fails—and the mitigations explain how to capture the gains.
 
 ---
 

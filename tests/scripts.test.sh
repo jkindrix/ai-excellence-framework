@@ -5,7 +5,8 @@
 # Run with: bash tests/scripts.test.sh
 #
 
-set -euo pipefail
+set -uo pipefail
+# Note: We don't use -e because arithmetic expressions like ((x++)) return 1 when x=0
 
 # Colors
 RED='\033[0;31m'
@@ -33,10 +34,10 @@ assert_file_exists() {
     local msg="${2:-File should exist: $file}"
     if [ -f "$file" ]; then
         echo -e "${GREEN}✓${NC} $msg"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo -e "${RED}✗${NC} $msg"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -45,10 +46,10 @@ assert_dir_exists() {
     local msg="${2:-Directory should exist: $dir}"
     if [ -d "$dir" ]; then
         echo -e "${GREEN}✓${NC} $msg"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo -e "${RED}✗${NC} $msg"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -56,12 +57,12 @@ assert_contains() {
     local file="$1"
     local pattern="$2"
     local msg="${3:-File should contain pattern}"
-    if grep -q "$pattern" "$file" 2>/dev/null; then
+    if grep -qF -- "$pattern" "$file" 2>/dev/null || grep -qE "$pattern" "$file" 2>/dev/null; then
         echo -e "${GREEN}✓${NC} $msg"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo -e "${RED}✗${NC} $msg"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -71,10 +72,10 @@ assert_not_contains() {
     local msg="${3:-File should not contain pattern}"
     if ! grep -q "$pattern" "$file" 2>/dev/null; then
         echo -e "${GREEN}✓${NC} $msg"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo -e "${RED}✗${NC} $msg"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -84,10 +85,10 @@ assert_exit_code() {
     local msg="${3:-Exit code should match}"
     if [ "$expected" -eq "$actual" ]; then
         echo -e "${GREEN}✓${NC} $msg"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo -e "${RED}✗${NC} $msg (expected $expected, got $actual)"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -110,10 +111,10 @@ test_verify_deps_is_executable() {
     local script="$PROJECT_ROOT/scripts/hooks/verify-deps.sh"
     if [ -x "$script" ]; then
         echo -e "${GREEN}✓${NC} verify-deps.sh should be executable"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo -e "${YELLOW}⚠${NC} verify-deps.sh is not executable (may need chmod +x)"
-        ((TESTS_PASSED++))  # Not a failure, just a warning
+        TESTS_PASSED=$((TESTS_PASSED + 1))  # Not a failure, just a warning
     fi
 }
 
@@ -121,10 +122,10 @@ test_verify_deps_has_shebang() {
     local script="$PROJECT_ROOT/scripts/hooks/verify-deps.sh"
     if head -1 "$script" | grep -q "^#!/"; then
         echo -e "${GREEN}✓${NC} verify-deps.sh should have shebang"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         echo -e "${RED}✗${NC} verify-deps.sh should have shebang"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 }
 
@@ -180,7 +181,7 @@ test_post_edit_exists() {
 
 test_post_edit_has_timeout() {
     local script="$PROJECT_ROOT/scripts/hooks/post-edit.sh"
-    assert_contains "$script" "timeout\|TIMEOUT" \
+    assert_contains "$script" "timeout|TIMEOUT" \
         "post-edit.sh should have timeout handling"
 }
 
@@ -298,6 +299,164 @@ test_mcp_server() {
 }
 
 test_mcp_server
+
+# =============================================================================
+# Test: check-claude-md.sh
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Testing: check-claude-md.sh"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+test_check_claude_md() {
+    assert_file_exists "$PROJECT_ROOT/scripts/hooks/check-claude-md.sh" \
+        "check-claude-md.sh should exist"
+
+    local script="$PROJECT_ROOT/scripts/hooks/check-claude-md.sh"
+
+    assert_contains "$script" "REQUIRED_SECTIONS" \
+        "check-claude-md.sh should check required sections"
+    assert_contains "$script" "secret_patterns" \
+        "check-claude-md.sh should check for secrets"
+}
+
+test_check_claude_md
+
+# =============================================================================
+# Test: check-todos.sh
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Testing: check-todos.sh"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+test_check_todos() {
+    assert_file_exists "$PROJECT_ROOT/scripts/hooks/check-todos.sh" \
+        "check-todos.sh should exist"
+}
+
+test_check_todos
+
+# =============================================================================
+# Test: Subagents
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Testing: Subagents"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+test_subagents() {
+    local agents_dir="$PROJECT_ROOT/.claude/agents"
+
+    assert_file_exists "$agents_dir/explorer.md" "explorer agent should exist"
+    assert_file_exists "$agents_dir/reviewer.md" "reviewer agent should exist"
+    assert_file_exists "$agents_dir/tester.md" "tester agent should exist"
+}
+
+test_subagents
+
+# =============================================================================
+# Test: Template Presets
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Testing: Template Presets"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+test_presets() {
+    local presets_dir="$PROJECT_ROOT/templates/presets"
+
+    assert_dir_exists "$presets_dir/minimal" "minimal preset should exist"
+    assert_dir_exists "$presets_dir/standard" "standard preset should exist"
+    assert_dir_exists "$presets_dir/full" "full preset should exist"
+    assert_dir_exists "$presets_dir/team" "team preset should exist"
+
+    for preset in minimal standard full team; do
+        assert_file_exists "$presets_dir/$preset/CLAUDE.md" \
+            "$preset preset should have CLAUDE.md"
+    done
+}
+
+test_presets
+
+# =============================================================================
+# Test: Documentation
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Testing: Documentation"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+test_documentation() {
+    assert_file_exists "$PROJECT_ROOT/README.md" "README.md should exist"
+    assert_file_exists "$PROJECT_ROOT/ai-development-friction.md" \
+        "Friction doc should exist"
+    assert_file_exists "$PROJECT_ROOT/ai-friction-mitigations.md" \
+        "Mitigations doc should exist"
+    assert_file_exists "$PROJECT_ROOT/docs/QUICK-REFERENCE.md" \
+        "Quick reference should exist"
+    assert_file_exists "$PROJECT_ROOT/docs/TROUBLESHOOTING.md" \
+        "Troubleshooting guide should exist"
+    assert_file_exists "$PROJECT_ROOT/docs/MODEL-SELECTION.md" \
+        "Model selection guide should exist"
+}
+
+test_documentation
+
+# =============================================================================
+# Test: JSON Schemas
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Testing: JSON Schemas"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+test_schemas() {
+    assert_file_exists "$PROJECT_ROOT/src/schemas/config.schema.json" \
+        "Config schema should exist"
+
+    # Validate JSON syntax
+    if node -e "require('$PROJECT_ROOT/src/schemas/config.schema.json')" 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} Config schema is valid JSON"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "${RED}✗${NC} Config schema has invalid JSON"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+}
+
+test_schemas
+
+# =============================================================================
+# Test: GitHub Actions
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Testing: GitHub Actions"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+test_github_actions() {
+    assert_file_exists "$PROJECT_ROOT/.github/workflows/ci.yml" \
+        "CI workflow should exist"
+    assert_file_exists "$PROJECT_ROOT/.github/workflows/release.yml" \
+        "Release workflow should exist"
+}
+
+test_github_actions
 
 # =============================================================================
 # Summary

@@ -2,15 +2,22 @@
   "name": "ai-excellence-framework",
   "version": "1.0.0",
   "description": "A comprehensive framework for reducing friction in AI-assisted software development",
+  "type": "module",
   "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cli": "./bin/cli.js"
+  },
   "bin": {
     "ai-excellence": "./bin/cli.js",
     "aix": "./bin/cli.js"
   },
   "scripts": {
-    "test": "node --test tests/",
-    "test:coverage": "node --test --experimental-test-coverage tests/",
-    "test:mcp": "python -m pytest tests/mcp/ -v",
+    "test": "node --test tests/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage tests/*.test.js",
+    "test:mcp": "python3 -m pytest tests/mcp/ -v",
+    "test:scripts": "bash tests/scripts.test.sh",
+    "test:all": "npm run test && npm run test:mcp && npm run test:scripts",
     "lint": "eslint src/ bin/",
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write \"**/*.{js,json,md,yaml,yml}\"",

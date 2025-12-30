@@ -1,16 +1,22 @@
 /**
  * AI Excellence Framework - Validate Command
  *
- * Validates the framework configuration and setup.
+ * Validates the framework configuration and setup with auto-fix capabilities.
  */
 
-import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import ora from 'ora';
+import fse from 'fs-extra';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PACKAGE_ROOT = join(__dirname, '..', '..');
 
 /**
- * Validation rules and their configurations
+ * Validation rules with auto-fix capabilities
  */
 const VALIDATION_RULES = [
   {
@@ -18,7 +24,68 @@ const VALIDATION_RULES = [
     name: 'CLAUDE.md exists',
     category: 'core',
     check: (cwd) => existsSync(join(cwd, 'CLAUDE.md')),
-    fix: null,
+    fix: async (cwd) => {
+      const template = `# Project Name
+
+## Overview
+
+[Brief description of what this project does]
+
+## Tech Stack
+
+- Language: [e.g., JavaScript, Python]
+- Framework: [e.g., React, Django]
+
+## Architecture
+
+[Key architectural decisions and patterns]
+
+## Conventions
+
+- [Naming conventions]
+- [File structure patterns]
+
+## Common Commands
+
+\`\`\`bash
+# Build
+npm run build
+
+# Test
+npm test
+
+# Run
+npm start
+\`\`\`
+
+## Current State
+
+### Phase
+Initial setup
+
+### Recent Decisions
+- [Date]: [Decision made]
+
+### Known Issues
+- None yet
+
+## Session Instructions
+
+### Before Starting
+1. Read this file completely
+2. Check recent commits for context
+
+### During Work
+- Use /plan before implementation
+- Use /verify before completing tasks
+
+### Before Ending
+- Update "Current State" section
+- Commit work in progress
+`;
+      writeFileSync(join(cwd, 'CLAUDE.md'), template);
+      return true;
+    },
     severity: 'error'
   },
   {
@@ -30,6 +97,17 @@ const VALIDATION_RULES = [
       if (!existsSync(path)) return false;
       const content = readFileSync(path, 'utf-8');
       return /## Overview/i.test(content);
+    },
+    fix: async (cwd) => {
+      const path = join(cwd, 'CLAUDE.md');
+      if (!existsSync(path)) return false;
+      let content = readFileSync(path, 'utf-8');
+      if (!/## Overview/i.test(content)) {
+        // Find the first heading and insert after it
+        content = content.replace(/^(# .+\n)/m, '$1\n## Overview\n\n[Brief description of what this project does]\n\n');
+        writeFileSync(path, content);
+      }
+      return true;
     },
     severity: 'warning'
   },
@@ -43,6 +121,21 @@ const VALIDATION_RULES = [
       const content = readFileSync(path, 'utf-8');
       return /## Tech Stack/i.test(content);
     },
+    fix: async (cwd) => {
+      const path = join(cwd, 'CLAUDE.md');
+      if (!existsSync(path)) return false;
+      let content = readFileSync(path, 'utf-8');
+      if (!/## Tech Stack/i.test(content)) {
+        // Find Overview section and insert after it
+        if (/## Overview/i.test(content)) {
+          content = content.replace(/(## Overview[\s\S]*?)(\n## |\n$)/m, '$1\n\n## Tech Stack\n\n- Language: [specify]\n- Framework: [specify]\n\n$2');
+        } else {
+          content += '\n\n## Tech Stack\n\n- Language: [specify]\n- Framework: [specify]\n';
+        }
+        writeFileSync(path, content);
+      }
+      return true;
+    },
     severity: 'warning'
   },
   {
@@ -55,6 +148,16 @@ const VALIDATION_RULES = [
       const content = readFileSync(path, 'utf-8');
       return /## Current State/i.test(content);
     },
+    fix: async (cwd) => {
+      const path = join(cwd, 'CLAUDE.md');
+      if (!existsSync(path)) return false;
+      let content = readFileSync(path, 'utf-8');
+      if (!/## Current State/i.test(content)) {
+        content += '\n\n## Current State\n\n### Phase\nIn development\n\n### Recent Decisions\n- [Add decisions here]\n';
+        writeFileSync(path, content);
+      }
+      return true;
+    },
     severity: 'warning'
   },
   {
@@ -62,6 +165,10 @@ const VALIDATION_RULES = [
     name: '.claude/commands directory exists',
     category: 'commands',
     check: (cwd) => existsSync(join(cwd, '.claude', 'commands')),
+    fix: async (cwd) => {
+      mkdirSync(join(cwd, '.claude', 'commands'), { recursive: true });
+      return true;
+    },
     severity: 'info'
   },
   {
@@ -69,6 +176,16 @@ const VALIDATION_RULES = [
     name: '/plan command exists',
     category: 'commands',
     check: (cwd) => existsSync(join(cwd, '.claude', 'commands', 'plan.md')),
+    fix: async (cwd) => {
+      const source = join(PACKAGE_ROOT, '.claude', 'commands', 'plan.md');
+      const target = join(cwd, '.claude', 'commands', 'plan.md');
+      if (existsSync(source)) {
+        mkdirSync(dirname(target), { recursive: true });
+        fse.copySync(source, target);
+        return true;
+      }
+      return false;
+    },
     severity: 'warning'
   },
   {
@@ -76,6 +193,16 @@ const VALIDATION_RULES = [
     name: '/verify command exists',
     category: 'commands',
     check: (cwd) => existsSync(join(cwd, '.claude', 'commands', 'verify.md')),
+    fix: async (cwd) => {
+      const source = join(PACKAGE_ROOT, '.claude', 'commands', 'verify.md');
+      const target = join(cwd, '.claude', 'commands', 'verify.md');
+      if (existsSync(source)) {
+        mkdirSync(dirname(target), { recursive: true });
+        fse.copySync(source, target);
+        return true;
+      }
+      return false;
+    },
     severity: 'warning'
   },
   {
@@ -83,7 +210,70 @@ const VALIDATION_RULES = [
     name: 'Pre-commit configuration exists',
     category: 'security',
     check: (cwd) => existsSync(join(cwd, '.pre-commit-config.yaml')),
+    fix: async (cwd) => {
+      const source = join(PACKAGE_ROOT, 'templates', '.pre-commit-config.yaml');
+      const target = join(cwd, '.pre-commit-config.yaml');
+      if (existsSync(source)) {
+        fse.copySync(source, target);
+        return true;
+      }
+      // Create a basic pre-commit config
+      const config = `repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: detect-private-key
+      - id: check-merge-conflict
+`;
+      writeFileSync(target, config);
+      return true;
+    },
     severity: 'info'
+  },
+  {
+    id: 'gitignore-exists',
+    name: '.gitignore exists',
+    category: 'security',
+    check: (cwd) => existsSync(join(cwd, '.gitignore')),
+    fix: async (cwd) => {
+      const content = `# AI Excellence Framework
+CLAUDE.local.md
+.claude/settings.local.json
+.tmp/
+.secrets.baseline
+
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+.env.local
+*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+`;
+      writeFileSync(join(cwd, '.gitignore'), content);
+      return true;
+    },
+    severity: 'warning'
   },
   {
     id: 'gitignore-has-tmp',
@@ -94,6 +284,12 @@ const VALIDATION_RULES = [
       if (!existsSync(path)) return false;
       const content = readFileSync(path, 'utf-8');
       return content.includes('.tmp/') || content.includes('.tmp');
+    },
+    fix: async (cwd) => {
+      const path = join(cwd, '.gitignore');
+      if (!existsSync(path)) return false;
+      appendFileSync(path, '\n# AI Excellence Framework temp files\n.tmp/\n');
+      return true;
     },
     severity: 'warning'
   },
@@ -107,6 +303,12 @@ const VALIDATION_RULES = [
       const content = readFileSync(path, 'utf-8');
       return content.includes('.secrets.baseline');
     },
+    fix: async (cwd) => {
+      const path = join(cwd, '.gitignore');
+      if (!existsSync(path)) return false;
+      appendFileSync(path, '\n.secrets.baseline\n');
+      return true;
+    },
     severity: 'info'
   },
   {
@@ -114,6 +316,23 @@ const VALIDATION_RULES = [
     name: 'Session notes directory exists',
     category: 'workflow',
     check: (cwd) => existsSync(join(cwd, 'docs', 'session-notes')),
+    fix: async (cwd) => {
+      mkdirSync(join(cwd, 'docs', 'session-notes'), { recursive: true });
+      writeFileSync(join(cwd, 'docs', 'session-notes', '.gitkeep'), '');
+      return true;
+    },
+    severity: 'info'
+  },
+  {
+    id: 'tmp-dir-exists',
+    name: '.tmp directory exists',
+    category: 'workflow',
+    check: (cwd) => existsSync(join(cwd, '.tmp')),
+    fix: async (cwd) => {
+      mkdirSync(join(cwd, '.tmp'), { recursive: true });
+      writeFileSync(join(cwd, '.tmp', '.gitkeep'), '');
+      return true;
+    },
     severity: 'info'
   },
   {
@@ -128,11 +347,27 @@ const VALIDATION_RULES = [
         /password\s*[:=]\s*["'][^"']{8,}["']/i,
         /api[_-]?key\s*[:=]\s*["'][^"']{16,}["']/i,
         /secret\s*[:=]\s*["'][^"']{8,}["']/i,
-        /-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----/
+        /-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----/,
+        /sk-[a-zA-Z0-9]{32,}/,
+        /ghp_[a-zA-Z0-9]{36}/,
+        /gho_[a-zA-Z0-9]{36}/,
+        /glpat-[a-zA-Z0-9\-]{20}/
       ];
       return !patterns.some(p => p.test(content));
     },
+    fix: null, // Cannot auto-fix secrets - requires manual intervention
     severity: 'error'
+  },
+  {
+    id: 'agents-dir-exists',
+    name: '.claude/agents directory exists',
+    category: 'agents',
+    check: (cwd) => existsSync(join(cwd, '.claude', 'agents')),
+    fix: async (cwd) => {
+      mkdirSync(join(cwd, '.claude', 'agents'), { recursive: true });
+      return true;
+    },
+    severity: 'info'
   }
 ];
 
@@ -141,8 +376,13 @@ const VALIDATION_RULES = [
  */
 export async function validateCommand(options) {
   const cwd = process.cwd();
+  const autoFix = options.fix || false;
 
   console.log(chalk.cyan('\n  AI Excellence Framework Validator\n'));
+
+  if (autoFix) {
+    console.log(chalk.yellow('  Auto-fix mode enabled\n'));
+  }
 
   const spinner = ora('Running validation checks...').start();
 
@@ -150,13 +390,29 @@ export async function validateCommand(options) {
     passed: [],
     warnings: [],
     errors: [],
-    info: []
+    info: [],
+    fixed: []
   };
 
   // Run all validation rules
   for (const rule of VALIDATION_RULES) {
     try {
-      const passed = await rule.check(cwd);
+      let passed = await rule.check(cwd);
+
+      if (!passed && autoFix && rule.fix) {
+        spinner.text = `Fixing: ${rule.name}...`;
+        try {
+          const fixed = await rule.fix(cwd);
+          if (fixed) {
+            passed = await rule.check(cwd);
+            if (passed) {
+              results.fixed.push(rule);
+            }
+          }
+        } catch (fixError) {
+          // Fix failed, continue with original result
+        }
+      }
 
       if (passed) {
         results.passed.push(rule);
@@ -184,7 +440,7 @@ export async function validateCommand(options) {
   spinner.stop();
 
   // Print results
-  printValidationResults(results);
+  printValidationResults(results, autoFix);
 
   // Return appropriate exit code
   if (results.errors.length > 0) {
@@ -195,12 +451,21 @@ export async function validateCommand(options) {
 /**
  * Print validation results
  */
-function printValidationResults(results) {
+function printValidationResults(results, autoFix) {
   const total = VALIDATION_RULES.length;
   const passedCount = results.passed.length;
 
   // Summary
   console.log(chalk.white(`  Validation Results: ${passedCount}/${total} checks passed\n`));
+
+  // Fixed (if any)
+  if (results.fixed.length > 0) {
+    console.log(chalk.green('  🔧 Auto-fixed:'));
+    results.fixed.forEach(r => {
+      console.log(chalk.green(`    ✓ ${r.name}`));
+    });
+    console.log('');
+  }
 
   // Passed
   if (results.passed.length > 0) {
@@ -219,6 +484,9 @@ function printValidationResults(results) {
       if (r.error) {
         console.log(chalk.gray(`      Error: ${r.error}`));
       }
+      if (r.fix && !autoFix) {
+        console.log(chalk.gray(`      Run with --fix to auto-repair`));
+      }
     });
     console.log('');
   }
@@ -228,6 +496,9 @@ function printValidationResults(results) {
     console.log(chalk.yellow('  ⚠ Warnings (should fix):'));
     results.warnings.forEach(r => {
       console.log(chalk.yellow(`    ⚠ ${r.name}`));
+      if (r.fix && !autoFix) {
+        console.log(chalk.gray(`      Run with --fix to auto-repair`));
+      }
     });
     console.log('');
   }
@@ -237,6 +508,9 @@ function printValidationResults(results) {
     console.log(chalk.blue('  ℹ Info (optional):'));
     results.info.forEach(r => {
       console.log(chalk.gray(`    ℹ ${r.name}`));
+      if (r.fix && !autoFix) {
+        console.log(chalk.gray(`      Run with --fix to auto-repair`));
+      }
     });
     console.log('');
   }
@@ -246,8 +520,14 @@ function printValidationResults(results) {
     console.log(chalk.green('  ✓ All critical checks passed!\n'));
   } else if (results.errors.length === 0) {
     console.log(chalk.yellow('  ⚠ Framework is functional but has warnings to address.\n'));
+    if (!autoFix) {
+      console.log(chalk.gray('  Run "npx ai-excellence validate --fix" to auto-fix issues.\n'));
+    }
   } else {
     console.log(chalk.red('  ✗ Framework has errors that need to be fixed.\n'));
-    console.log(chalk.gray('  Run "npx ai-excellence init" to fix core issues.\n'));
+    if (!autoFix) {
+      console.log(chalk.gray('  Run "npx ai-excellence validate --fix" to auto-fix issues.\n'));
+      console.log(chalk.gray('  Or run "npx ai-excellence init" to reinitialize.\n'));
+    }
   }
 }

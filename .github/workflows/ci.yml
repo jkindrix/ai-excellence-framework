@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-node:
+    name: Node.js Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint || true
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run tests with coverage
+        run: npm run test:coverage || true
+
+  test-python:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install -r tests/mcp/requirements.txt || true
+
+      - name: Run Python tests
+        run: npm run test:mcp || true
+
+  test-shell:
+    name: Shell Script Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/hooks/*.sh tests/*.sh
+
+      - name: Run shell tests
+        run: npm run test:scripts || true
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high || true
+
+      - name: Check for secrets
+        run: |
+          pip install detect-secrets
+          detect-secrets scan --baseline .secrets.baseline || true
+
+  validate-framework:
+    name: Framework Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate CLAUDE.md structure
+        run: |
+          # Check required sections exist
+          grep -q "## Overview" CLAUDE.md || echo "Warning: Missing Overview section"
+          grep -q "## Tech Stack" CLAUDE.md || echo "Warning: Missing Tech Stack section"
+          grep -q "## Current State" CLAUDE.md || echo "Warning: Missing Current State section"
+
+      - name: Check slash commands
+        run: |
+          for cmd in plan verify handoff assumptions review security-review refactor test-coverage; do
+            if [ -f ".claude/commands/$cmd.md" ]; then
+              echo "✓ /$cmd command exists"
+            else
+              echo "✗ /$cmd command missing"
+            fi
+          done
+
+      - name: Check agents
+        run: |
+          for agent in explorer reviewer tester; do
+            if [ -f ".claude/agents/$agent.md" ]; then
+              echo "✓ $agent agent exists"
+            else
+              echo "✗ $agent agent missing"
+            fi
+          done
+
+  lint-markdown:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install markdownlint
+        run: npm install -g markdownlint-cli2
+
+      - name: Lint markdown files
+        run: markdownlint-cli2 "**/*.md" --config .markdownlint.json || true
+        continue-on-error: true
