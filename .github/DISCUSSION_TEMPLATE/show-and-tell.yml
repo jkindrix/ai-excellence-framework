@@ -1,0 +1,42 @@
+title: "[Show & Tell]: "
+labels:
+  - show-and-tell
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share how you're using the AI Excellence Framework!
+        We'd love to see your setups, customizations, and success stories.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What are you sharing?
+      description: Describe what you've built or how you're using the framework.
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup Details
+      description: |
+        Share any relevant details about your configuration.
+      placeholder: |
+        - AI tools used: Claude Code, Cursor
+        - Preset: standard
+        - Custom commands: ...
+
+  - type: textarea
+    id: lessons
+    attributes:
+      label: Lessons Learned
+      description: |
+        What tips would you share with others?
+
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: |
+        Optional: Link to your project, blog post, or demo.

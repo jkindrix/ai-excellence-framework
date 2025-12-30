@@ -1,0 +1,38 @@
+title: "[Idea]: "
+labels:
+  - idea
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share your ideas for improving the AI Excellence Framework!
+        This is a space for open discussion before creating formal feature requests.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea Description
+      description: What's your idea?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: |
+        Why do you think this would be valuable? What problem does it solve?
+
+  - type: textarea
+    id: considerations
+    attributes:
+      label: Considerations
+      description: |
+        Are there any potential downsides or challenges you've thought about?
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be interested in helping implement this idea

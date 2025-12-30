@@ -1,0 +1,47 @@
+title: "[Question]: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for asking a question! Please provide details so the community can help.
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched the documentation
+          required: true
+        - label: I have searched existing discussions
+          required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: |
+        What are you trying to accomplish? What have you tried so far?
+      placeholder: |
+        I'm trying to...
+        I've tried...
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (if relevant)
+      description: |
+        If your question is about a specific issue, include your setup.
+      placeholder: |
+        - Framework version:
+        - Node.js version:
+        - OS:
