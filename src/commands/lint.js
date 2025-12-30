@@ -9,7 +9,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
-import { join, basename } from 'path';
+import { join } from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -115,7 +115,7 @@ export async function lintCommand(options) {
         } else {
           const category = check.severity === 'error' ? 'errors'
             : check.severity === 'warning' ? 'warnings'
-            : 'info';
+              : 'info';
 
           results[category].push({
             file: config.name,
@@ -161,7 +161,7 @@ function checkExists(cwd, name) {
 
 function checkClaudeMdLength(cwd) {
   const path = join(cwd, 'CLAUDE.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped (file not found)' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped (file not found)' };}
 
   const content = readFileSync(path, 'utf-8');
   const lines = content.split('\n').length;
@@ -180,7 +180,7 @@ function checkClaudeMdLength(cwd) {
 
 function checkRequiredSections(cwd) {
   const path = join(cwd, 'CLAUDE.md');
-  if (!existsSync(path)) return { passed: false, message: 'CLAUDE.md not found' };
+  if (!existsSync(path)) {return { passed: false, message: 'CLAUDE.md not found' };}
 
   const content = readFileSync(path, 'utf-8');
   const required = ['Overview', 'Tech Stack'];
@@ -197,7 +197,7 @@ function checkRequiredSections(cwd) {
 
 function checkRecommendedSections(cwd) {
   const path = join(cwd, 'CLAUDE.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
   const recommended = ['Architecture', 'Conventions', 'Current State', 'Session Instructions'];
@@ -214,7 +214,7 @@ function checkRecommendedSections(cwd) {
 
 function checkSecurityChecklist(cwd) {
   const path = join(cwd, 'CLAUDE.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
   const hasChecklist = content.includes('Security Checklist') ||
@@ -231,7 +231,7 @@ function checkSecurityChecklist(cwd) {
 
 function checkNoSecrets(cwd, name) {
   const path = join(cwd, name);
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
 
@@ -261,7 +261,7 @@ function checkNoSecrets(cwd, name) {
 
 function checkSessionInstructions(cwd) {
   const path = join(cwd, 'CLAUDE.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
   const hasInstructions = content.includes('Session Instructions') ||
@@ -279,7 +279,7 @@ function checkSessionInstructions(cwd) {
 
 function checkAgentsMdSections(cwd) {
   const path = join(cwd, 'AGENTS.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped (no AGENTS.md)' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped (no AGENTS.md)' };}
 
   const content = readFileSync(path, 'utf-8');
 
@@ -300,7 +300,7 @@ function checkAgentsMdSections(cwd) {
 
 function checkVerificationCommands(cwd) {
   const path = join(cwd, 'AGENTS.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
   const hasCommands = content.includes('```bash') || content.includes('```sh');
@@ -320,7 +320,7 @@ function checkVerificationCommands(cwd) {
 
 function checkBoundaries(cwd) {
   const path = join(cwd, 'AGENTS.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
   const hasBoundaries = content.toLowerCase().includes('boundaries') ||
@@ -347,7 +347,7 @@ function checkCursorExists(cwd) {
 
 function checkMdcFormat(cwd) {
   const rulesDir = join(cwd, '.cursor', 'rules');
-  if (!existsSync(rulesDir)) return { passed: true, message: 'Skipped (no rules dir)' };
+  if (!existsSync(rulesDir)) {return { passed: true, message: 'Skipped (no rules dir)' };}
 
   const files = readdirSync(rulesDir).filter(f => f.endsWith('.mdc'));
   const issues = [];
@@ -370,7 +370,7 @@ function checkMdcFormat(cwd) {
 
 function checkCursorSecurityRules(cwd) {
   const rulesDir = join(cwd, '.cursor', 'rules');
-  if (!existsSync(rulesDir)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(rulesDir)) {return { passed: true, message: 'Skipped' };}
 
   const hasSecurity = existsSync(join(rulesDir, 'security.mdc'));
 
@@ -379,13 +379,13 @@ function checkCursorSecurityRules(cwd) {
     message: hasSecurity
       ? 'Security rules file present'
       : 'No dedicated security rules file',
-    suggestion: hasSecurity ? null : "Consider creating .cursor/rules/security.mdc"
+    suggestion: hasSecurity ? null : 'Consider creating .cursor/rules/security.mdc'
   };
 }
 
 function checkCopilotLength(cwd) {
   const path = join(cwd, '.github', 'copilot-instructions.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
   const chars = content.length;
@@ -404,7 +404,7 @@ function checkCopilotLength(cwd) {
 
 function checkCopilotSecurity(cwd) {
   const path = join(cwd, '.github', 'copilot-instructions.md');
-  if (!existsSync(path)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(path)) {return { passed: true, message: 'Skipped' };}
 
   const content = readFileSync(path, 'utf-8');
   const hasSecurity = content.toLowerCase().includes('security');
@@ -429,7 +429,7 @@ function checkWindsurfExists(cwd) {
 
 function checkWindsurfCharLimit(cwd) {
   const rulesDir = join(cwd, '.windsurf', 'rules');
-  if (!existsSync(rulesDir)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(rulesDir)) {return { passed: true, message: 'Skipped' };}
 
   const files = readdirSync(rulesDir).filter(f => f.endsWith('.md'));
   const oversized = [];
@@ -461,7 +461,7 @@ function checkHooksExist(cwd) {
 
 function checkHooksExecutable(cwd) {
   const hooksDir = join(cwd, 'scripts', 'hooks');
-  if (!existsSync(hooksDir)) return { passed: true, message: 'Skipped' };
+  if (!existsSync(hooksDir)) {return { passed: true, message: 'Skipped' };}
 
   const hooks = readdirSync(hooksDir).filter(f => f.endsWith('.sh'));
   const issues = [];
@@ -484,7 +484,7 @@ function checkHooksExecutable(cwd) {
     message: issues.length === 0
       ? `${hooks.length} hooks executable`
       : `Non-executable hooks: ${issues.join(', ')}`,
-    suggestion: issues.length > 0 ? `Run: chmod +x scripts/hooks/*.sh` : null
+    suggestion: issues.length > 0 ? 'Run: chmod +x scripts/hooks/*.sh' : null
   };
 }
 
