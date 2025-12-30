@@ -1,0 +1,47 @@
+{
+  "$schema": "https://github.com/ai-excellence-framework/config.schema.json",
+  "version": "1.0.0",
+  "preset": "team",
+  "commands": {
+    "enabled": ["plan", "verify", "handoff", "assumptions", "review", "security-review", "refactor", "test-coverage"]
+  },
+  "agents": {
+    "enabled": ["reviewer", "explorer", "tester"]
+  },
+  "hooks": {
+    "enabled": true,
+    "postEdit": {
+      "enabled": true,
+      "timeout": 30
+    },
+    "verifyDeps": {
+      "enabled": true,
+      "failOnUnknown": true
+    }
+  },
+  "security": {
+    "preCommit": true,
+    "secretsDetection": true,
+    "dependencyScanning": true,
+    "aiPatternChecks": true
+  },
+  "mcp": {
+    "enabled": true,
+    "storage": "sqlite",
+    "limits": {
+      "maxDecisions": 5000,
+      "maxPatterns": 500,
+      "maxContextKeys": 200
+    }
+  },
+  "metrics": {
+    "enabled": true,
+    "autoCollect": true,
+    "directory": ".tmp/metrics"
+  },
+  "team": {
+    "enabled": true,
+    "sharedMemory": true,
+    "enforceConventions": true
+  }
+}

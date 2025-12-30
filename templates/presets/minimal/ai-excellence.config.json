@@ -1,0 +1,23 @@
+{
+  "$schema": "https://github.com/ai-excellence-framework/config.schema.json",
+  "version": "1.0.0",
+  "preset": "minimal",
+  "commands": {
+    "enabled": ["plan", "verify"]
+  },
+  "hooks": {
+    "enabled": false
+  },
+  "security": {
+    "preCommit": false,
+    "secretsDetection": false,
+    "dependencyScanning": false,
+    "aiPatternChecks": false
+  },
+  "mcp": {
+    "enabled": false
+  },
+  "metrics": {
+    "enabled": false
+  }
+}
