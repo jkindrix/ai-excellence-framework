@@ -85,7 +85,12 @@ program
 
 // Error handling
 program.exitOverride(err => {
-  if (err.code === 'commander.help') {
+  // Exit cleanly for help and version
+  if (
+    err.code === 'commander.help' ||
+    err.code === 'commander.helpDisplayed' ||
+    err.code === 'commander.version'
+  ) {
     process.exit(0);
   }
   console.error(chalk.red(`\nError: ${err.message}`));

@@ -139,20 +139,79 @@ export PROJECT_MEMORY_TLS_CERT=/path/to/cert.pem
 export PROJECT_MEMORY_TLS_KEY=/path/to/key.pem
 ```
 
-### 3. Access Control
+### 3. Access Control & Authentication
 
-#### API Key Authentication (Optional)
+#### API Key Authentication
+
+For team deployments, enable API key authentication to restrict access:
 
 ```bash
 # Enable API key requirement
-export PROJECT_MEMORY_API_KEY="your-api-key"
+export PROJECT_MEMORY_API_KEY="your-secure-api-key-here"
+
+# Generate a secure API key
+openssl rand -hex 32
 ```
+
+**Client Configuration** (in Claude settings):
+
+```json
+{
+  "mcpServers": {
+    "project-memory": {
+      "command": "python",
+      "args": ["scripts/mcp/project-memory-server.py"],
+      "env": {
+        "PROJECT_MEMORY_API_KEY": "${PROJECT_MEMORY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+#### Multi-User Authentication (Team Deployments)
+
+For teams with multiple users accessing a shared MCP server:
+
+```bash
+# Option 1: Shared API key (simpler, less secure)
+export PROJECT_MEMORY_API_KEY="team-shared-key"
+
+# Option 2: Per-user keys via reverse proxy (more secure)
+# Use nginx/traefik with JWT validation
+
+# Option 3: OAuth2 integration (enterprise)
+export PROJECT_MEMORY_AUTH_PROVIDER="oauth2"
+export PROJECT_MEMORY_OAUTH_ISSUER="https://auth.example.com"
+export PROJECT_MEMORY_OAUTH_AUDIENCE="mcp-server"
+```
+
+#### Role-Based Access Control (RBAC)
+
+Future versions will support granular permissions:
+
+| Role       | Permissions                                    |
+| ---------- | ---------------------------------------------- |
+| `reader`   | `recall_decisions`, `get_patterns`, `get_context` |
+| `writer`   | All reader + `remember_decision`, `store_pattern`, `set_context` |
+| `admin`    | All writer + `purge_memory`, `export_memory`, `import_memory` |
+
+Currently, all authenticated users have full access. Plan RBAC for team deployments.
 
 #### Read-Only Mode
 
 ```bash
 # Disable write operations (useful for shared databases)
 export PROJECT_MEMORY_READ_ONLY=true
+```
+
+#### IP Allowlist
+
+For network-exposed deployments:
+
+```bash
+# Only allow specific IPs
+export PROJECT_MEMORY_ALLOWED_IPS="10.0.0.0/8,192.168.1.0/24,127.0.0.1"
 ```
 
 ### 4. Logging & Monitoring

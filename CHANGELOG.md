@@ -13,6 +13,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Additional language-specific security rules
 - AI model version recommendations
 
+## [1.3.0] - 2024-12-30
+
+### Added
+
+#### Documentation
+
+- **CONTRIBUTING.md** - Comprehensive contribution guidelines
+  - Code of conduct, development setup, PR process
+  - Coding standards for JavaScript, Python, and Shell
+  - Testing and documentation guidelines
+  - Security and release process documentation
+- **Architecture Documentation** (`docs/ARCHITECTURE.md`)
+  - System overview with ASCII diagrams
+  - Component architecture (Context, Command, Agent, Persistence layers)
+  - Data flow diagrams (session start, command execution, commit flow)
+  - Security architecture with input validation chain
+  - Extension points and performance considerations
+- **Session Notes Examples** (`docs/session-notes/`)
+  - Example session handoff document
+  - Session notes README with templates
+- **MCP Authentication Documentation** - Enhanced security guide
+  - API key authentication with client configuration
+  - Multi-user authentication options (shared key, reverse proxy, OAuth2)
+  - Role-based access control (RBAC) future roadmap
+  - IP allowlist configuration
+
+#### Testing
+
+- **E2E Tests** (`tests/e2e.test.js`) - Real CLI invocation tests
+  - CLI binary invocation (version, help, command-specific help)
+  - Init command with all presets
+  - Validate command with fix mode
+  - Doctor command diagnostics
+  - Configuration file validation
+  - File permissions verification
+  - Error handling edge cases
+  - Programmatic API exports
+- **Input Validation Utilities** (`src/utils/validation.js`)
+  - Path validation with traversal prevention
+  - Preset and project name validation
+  - Configuration object validation
+  - String sanitization with HTML escaping
+  - Secret detection patterns
+
+#### CI/CD Enhancements
+
+- **SBOM Generation** - CycloneDX format for supply chain transparency
+- **Vulnerability Scanning** - OSV-Scanner and npm audit integration
+- **ShellCheck Strict Mode** - Enforced shell script linting
+- **CVE Detection** - Automatic detection of critical vulnerabilities
+
+#### Programmatic API
+
+- **Extended exports in `src/index.js`**
+  - `checkInstallation()` - Check framework installation status
+  - `listInstalledCommands()` - Get installed slash commands
+  - `listInstalledAgents()` - Get installed agents
+  - `readClaudeMd()` / `parseClaudeMd()` - Parse CLAUDE.md files
+  - `detectSecrets()` - Check content for secrets
+  - `validateClaudeMdStructure()` - Validate CLAUDE.md structure
+  - `getPackageRoot()` / `getPresetPath()` - Get framework paths
+
+### Fixed
+
+- **CLI Exit Codes** - Fixed `--version` and `--help` returning non-zero exit codes
+- **E2E Test ESM Compatibility** - Replaced `require()` with ESM imports
+
+### Changed
+
+- **VitePress Navigation** - Added Architecture and Contributing sections
+- **CI Pipeline** - Added SBOM and vulnerability-scan jobs to final status check
+
 ## [1.2.0] - 2024-12-30
 
 ### Added

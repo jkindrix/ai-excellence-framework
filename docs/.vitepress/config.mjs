@@ -128,6 +128,7 @@ export default defineConfig({
           text: 'Guides',
           items: [
             { text: 'Quick Reference', link: '/QUICK-REFERENCE' },
+            { text: 'Architecture', link: '/ARCHITECTURE' },
             { text: 'When AI Helps', link: '/WHEN-AI-HELPS' },
             { text: 'IDE Integration', link: '/IDE-INTEGRATION' },
             { text: 'SAST Integration', link: '/SAST-INTEGRATION' },
@@ -137,6 +138,13 @@ export default defineConfig({
             { text: 'Model Selection', link: '/MODEL-SELECTION' },
             { text: 'Troubleshooting', link: '/TROUBLESHOOTING' },
             { text: 'Research Citations', link: '/RESEARCH-CITATIONS' }
+          ]
+        },
+        {
+          text: 'Contributing',
+          items: [
+            { text: 'How to Contribute', link: '/CONTRIBUTING' },
+            { text: 'Session Notes', link: '/session-notes/' }
           ]
         }
       ]

@@ -1,6 +1,6 @@
 {
   "name": "ai-excellence-framework",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A comprehensive framework for reducing friction in AI-assisted software development",
   "type": "module",
   "main": "src/index.js",
@@ -26,7 +26,8 @@
     "test:mcp:perf": "python3 -m pytest tests/mcp/test_performance.py -v",
     "test:scripts": "bash tests/scripts.test.sh",
     "test:edge": "node --test tests/edge-cases.test.js",
-    "test:all": "npm run test && npm run test:integration && npm run test:commands && npm run test:edge && npm run test:mcp && npm run test:scripts",
+    "test:e2e": "node --test tests/e2e.test.js",
+    "test:all": "npm run test && npm run test:integration && npm run test:commands && npm run test:edge && npm run test:e2e && npm run test:mcp && npm run test:scripts",
     "lint": "eslint src/ bin/",
     "lint:fix": "eslint src/ bin/ --fix",
     "format": "prettier --write \"**/*.{js,json,md,yaml,yml}\"",

@@ -134,15 +134,30 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
 
-      - name: Lint shell scripts
+      - name: Lint shell scripts (strict)
         run: |
-          find scripts -name "*.sh" -exec shellcheck {} \; || true
+          echo "Running ShellCheck on all shell scripts..."
+          ERRORS=0
+          for script in $(find scripts -name "*.sh"); do
+            echo "Checking $script..."
+            if shellcheck -x -e SC1091 "$script"; then
+              echo "✓ $script passed"
+            else
+              echo "✗ $script failed"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "❌ ShellCheck found $ERRORS script(s) with issues"
+            exit 1
+          fi
+          echo "✅ All shell scripts passed ShellCheck"
 
       - name: Make scripts executable
         run: chmod +x scripts/hooks/*.sh tests/*.sh
 
       - name: Run shell tests
-        run: bash tests/scripts.test.sh || true
+        run: bash tests/scripts.test.sh
 
   # ============================================
   # Security Scanning (Semgrep + npm audit)
@@ -199,6 +214,80 @@ jobs:
               fi
             fi
           done
+
+  # ============================================
+  # SBOM Generation
+  # ============================================
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          npx @cyclonedx/cyclonedx-npm --output-file sbom.json
+          echo "SBOM generated successfully"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 30
+
+  # ============================================
+  # Dependency Vulnerability Scanning
+  # ============================================
+  vulnerability-scan:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --lockfile=package-lock.json
+        continue-on-error: true
+
+      - name: Check for known CVEs in dependencies
+        run: |
+          echo "Checking for known vulnerabilities..."
+          npm audit --json > audit-results.json || true
+          HIGH=$(jq '.metadata.vulnerabilities.high // 0' audit-results.json)
+          CRITICAL=$(jq '.metadata.vulnerabilities.critical // 0' audit-results.json)
+          echo "High: $HIGH, Critical: $CRITICAL"
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "❌ Critical vulnerabilities found!"
+            cat audit-results.json | jq '.vulnerabilities | to_entries[] | select(.value.severity == "critical")'
+            exit 1
+          fi
+          echo "✅ No critical vulnerabilities"
 
   # ============================================
   # CodeQL Analysis
@@ -399,6 +488,8 @@ jobs:
         test-python,
         test-shell,
         security,
+        sbom,
+        vulnerability-scan,
         validate-framework,
         lint-markdown,
         docs-build,
