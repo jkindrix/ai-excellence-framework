@@ -8,8 +8,13 @@ on:
 
 env:
   NODE_VERSION: '20.x'
+  PYTHON_VERSION: '3.12'
+  COVERAGE_THRESHOLD: 70
 
 jobs:
+  # ============================================
+  # Node.js Tests with Coverage Enforcement
+  # ============================================
   test-node:
     name: Node.js Tests
     runs-on: ubuntu-latest
@@ -45,9 +50,42 @@ jobs:
         run: node --test tests/commands.test.js
 
       - name: Run tests with coverage
-        run: npm run test:coverage
+        id: coverage
+        run: |
+          npm run test:coverage 2>&1 | tee coverage-output.txt
+          # Extract coverage percentage (Node.js experimental coverage format)
+          COVERAGE=$(grep -oP 'all files\s+\|\s+\K[\d.]+' coverage-output.txt | head -1 || echo "0")
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
         continue-on-error: true
 
+      - name: Check coverage threshold
+        if: matrix.node-version == '20.x'
+        run: |
+          COVERAGE="${{ steps.coverage.outputs.coverage }}"
+          if [ -z "$COVERAGE" ]; then
+            echo "⚠️ Could not determine coverage, skipping threshold check"
+            exit 0
+          fi
+          THRESHOLD=${{ env.COVERAGE_THRESHOLD }}
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "❌ Coverage $COVERAGE% is below threshold $THRESHOLD%"
+            exit 1
+          else
+            echo "✅ Coverage $COVERAGE% meets threshold $THRESHOLD%"
+          fi
+
+      - name: Upload coverage artifact
+        if: matrix.node-version == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-output.txt
+          retention-days: 7
+
+  # ============================================
+  # Python Tests with Coverage
+  # ============================================
   test-python:
     name: Python Tests
     runs-on: ubuntu-latest
@@ -62,16 +100,30 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
-          pip install -r tests/mcp/requirements.txt || true
+          pip install pytest pytest-cov pytest-asyncio
+          pip install -r tests/mcp/requirements.txt || echo "No requirements.txt found"
 
-      - name: Run Python tests
-        run: npm run test:mcp || true
+      - name: Run Python tests with coverage
+        run: |
+          pytest tests/mcp/ -v --cov=scripts/mcp --cov-report=term-missing --cov-fail-under=60 || true
 
+      - name: Upload Python coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage-report
+          path: .coverage
+          retention-days: 7
+        continue-on-error: true
+
+  # ============================================
+  # Shell Script Tests
+  # ============================================
   test-shell:
     name: Shell Script Tests
     runs-on: ubuntu-latest
@@ -79,15 +131,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Lint shell scripts
+        run: |
+          find scripts -name "*.sh" -exec shellcheck {} \; || true
+
       - name: Make scripts executable
         run: chmod +x scripts/hooks/*.sh tests/*.sh
 
       - name: Run shell tests
-        run: npm run test:scripts || true
+        run: bash tests/scripts.test.sh || true
 
+  # ============================================
+  # Security Scanning (Semgrep + npm audit)
+  # ============================================
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
 
     steps:
       - uses: actions/checkout@v4
@@ -101,14 +166,76 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=high || true
+      - name: NPM Audit (High/Critical only)
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
-      - name: Check for secrets
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/owasp-top-ten
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        continue-on-error: true
+
+      - name: Check for secrets with detect-secrets
         run: |
           pip install detect-secrets
-          detect-secrets scan --baseline .secrets.baseline || true
+          detect-secrets scan --baseline .secrets.baseline
+        continue-on-error: true
 
+      - name: Verify no hallucinated packages
+        run: |
+          echo "Verifying all npm packages exist..."
+          npm ls --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' | head -20 | while read pkg; do
+            if [ -n "$pkg" ]; then
+              if npm view "$pkg" name >/dev/null 2>&1; then
+                echo "✓ $pkg verified"
+              else
+                echo "⚠️ Package not found: $pkg"
+              fi
+            fi
+          done
+
+  # ============================================
+  # CodeQL Analysis
+  # ============================================
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: +security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # ============================================
+  # Framework Validation
+  # ============================================
   validate-framework:
     name: Framework Validation
     runs-on: ubuntu-latest
@@ -127,31 +254,91 @@ jobs:
 
       - name: Validate CLAUDE.md structure
         run: |
-          # Check required sections exist
-          grep -q "## Overview" CLAUDE.md || echo "Warning: Missing Overview section"
-          grep -q "## Tech Stack" CLAUDE.md || echo "Warning: Missing Tech Stack section"
-          grep -q "## Current State" CLAUDE.md || echo "Warning: Missing Current State section"
+          echo "Validating CLAUDE.md..."
+          ERRORS=0
+
+          # Required sections
+          for section in "## Overview" "## Tech Stack" "## Current State"; do
+            if grep -q "$section" CLAUDE.md; then
+              echo "✓ Found: $section"
+            else
+              echo "✗ Missing: $section"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+
+          # Recommended sections
+          for section in "## Architecture" "## Conventions" "## Common Commands"; do
+            if grep -q "$section" CLAUDE.md; then
+              echo "✓ Found: $section"
+            else
+              echo "⚠️ Recommended: $section"
+            fi
+          done
+
+          if [ $ERRORS -gt 0 ]; then
+            echo "❌ CLAUDE.md validation failed with $ERRORS errors"
+            exit 1
+          fi
+          echo "✅ CLAUDE.md validation passed"
 
       - name: Check slash commands
         run: |
+          ERRORS=0
           for cmd in plan verify handoff assumptions review security-review refactor test-coverage; do
             if [ -f ".claude/commands/$cmd.md" ]; then
               echo "✓ /$cmd command exists"
             else
               echo "✗ /$cmd command missing"
+              ERRORS=$((ERRORS + 1))
             fi
           done
+          if [ $ERRORS -gt 0 ]; then
+            echo "❌ $ERRORS slash commands missing"
+            exit 1
+          fi
 
       - name: Check agents
         run: |
+          ERRORS=0
           for agent in explorer reviewer tester; do
             if [ -f ".claude/agents/$agent.md" ]; then
               echo "✓ $agent agent exists"
             else
               echo "✗ $agent agent missing"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+          if [ $ERRORS -gt 0 ]; then
+            echo "❌ $ERRORS agents missing"
+            exit 1
+          fi
+
+      - name: Validate JSON schemas
+        run: |
+          echo "Validating JSON files against schemas..."
+          for config in templates/presets/*/ai-excellence.config.json; do
+            if [ -f "$config" ]; then
+              echo "Validating $config..."
+              node -e "JSON.parse(require('fs').readFileSync('$config'))" && echo "✓ Valid JSON"
             fi
           done
 
+      - name: Check hook scripts are executable
+        run: |
+          for script in scripts/hooks/*.sh; do
+            if [ -f "$script" ]; then
+              if [ -x "$script" ] || head -1 "$script" | grep -q "^#!"; then
+                echo "✓ $script is valid"
+              else
+                echo "⚠️ $script may not be executable"
+              fi
+            fi
+          done
+
+  # ============================================
+  # Markdown Linting
+  # ============================================
   lint-markdown:
     name: Markdown Lint
     runs-on: ubuntu-latest
@@ -168,5 +355,56 @@ jobs:
         run: npm install -g markdownlint-cli2
 
       - name: Lint markdown files
-        run: markdownlint-cli2 "**/*.md" --config .markdownlint.json || true
+        run: markdownlint-cli2 "**/*.md" --config .markdownlint.json
         continue-on-error: true
+
+  # ============================================
+  # Documentation Build Test
+  # ============================================
+  docs-build:
+    name: Documentation Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build VitePress docs
+        run: npm run docs:build
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-build
+          path: docs/.vitepress/dist
+          retention-days: 7
+
+  # ============================================
+  # Final Status Check
+  # ============================================
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [test-node, test-python, test-shell, security, validate-framework, lint-markdown, docs-build]
+    if: always()
+
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.test-node.result }}" == "failure" ]]; then
+            echo "❌ Node.js tests failed"
+            exit 1
+          fi
+          if [[ "${{ needs.validate-framework.result }}" == "failure" ]]; then
+            echo "❌ Framework validation failed"
+            exit 1
+          fi
+          echo "✅ All critical checks passed"
