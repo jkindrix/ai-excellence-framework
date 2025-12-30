@@ -1,0 +1,592 @@
+#!/usr/bin/env python3
+"""
+Project Memory MCP Server
+Production-quality persistent memory specific to projects.
+
+Features:
+- SQLite storage for durability
+- Full-text search for decisions
+- Memory size limits and cleanup
+- Input validation and sanitization
+- Proper error handling
+- Logging for debugging
+
+Usage:
+    python project-memory-server.py
+
+Configuration via environment:
+    PROJECT_MEMORY_DB: Database file path (default: ~/.claude/project-memories/{project}.db)
+    PROJECT_MEMORY_MAX_DECISIONS: Maximum stored decisions (default: 1000)
+    PROJECT_MEMORY_MAX_PATTERNS: Maximum stored patterns (default: 100)
+"""
+
+import json
+import logging
+import os
+import re
+import sqlite3
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Optional
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+logger = logging.getLogger("project-memory")
+
+# Try to import MCP SDK
+try:
+    from mcp.server import Server
+    from mcp.server.stdio import stdio_server
+    from mcp.types import Tool, TextContent
+except ImportError:
+    logger.error("MCP SDK not installed. Run: pip install mcp")
+    sys.exit(1)
+
+# Configuration
+MAX_DECISIONS = int(os.environ.get("PROJECT_MEMORY_MAX_DECISIONS", "1000"))
+MAX_PATTERNS = int(os.environ.get("PROJECT_MEMORY_MAX_PATTERNS", "100"))
+MAX_CONTEXT_KEYS = int(os.environ.get("PROJECT_MEMORY_MAX_CONTEXT_KEYS", "50"))
+MAX_STRING_LENGTH = 10000  # Maximum length for any string input
+
+
+def sanitize_input(value: str, max_length: int = MAX_STRING_LENGTH) -> str:
+    """Sanitize string input to prevent injection and limit size."""
+    if not isinstance(value, str):
+        value = str(value)
+    # Truncate if too long
+    if len(value) > max_length:
+        value = value[:max_length] + "... [truncated]"
+    # Remove null bytes and other problematic characters
+    value = value.replace('\x00', '')
+    return value.strip()
+
+
+def validate_key(key: str) -> bool:
+    """Validate that a key is safe for use."""
+    if not key or not isinstance(key, str):
+        return False
+    # Allow alphanumeric, underscores, hyphens, dots
+    return bool(re.match(r'^[\w\-\.]+$', key)) and len(key) <= 100
+
+
+class ProjectMemoryDB:
+    """SQLite-backed project memory storage."""
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize database schema."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    rationale TEXT NOT NULL,
+                    context TEXT DEFAULT '',
+                    alternatives TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS patterns (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    description TEXT NOT NULL,
+                    example TEXT DEFAULT '',
+                    when_to_use TEXT DEFAULT '',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS context (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_decisions_timestamp ON decisions(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_decisions_search ON decisions(decision, rationale);
+                CREATE INDEX IF NOT EXISTS idx_patterns_name ON patterns(name);
+            """)
+            conn.commit()
+        logger.info(f"Database initialized at {self.db_path}")
+
+    def add_decision(self, decision: str, rationale: str,
+                     context: str = "", alternatives: str = "") -> int:
+        """Add a new decision. Returns the decision ID."""
+        # Enforce limits
+        self._enforce_decision_limit()
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                INSERT INTO decisions (timestamp, decision, rationale, context, alternatives)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                datetime.now().isoformat(),
+                sanitize_input(decision),
+                sanitize_input(rationale),
+                sanitize_input(context),
+                sanitize_input(alternatives)
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def _enforce_decision_limit(self):
+        """Remove oldest decisions if limit exceeded."""
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+            if count >= MAX_DECISIONS:
+                # Delete oldest 10%
+                delete_count = max(1, MAX_DECISIONS // 10)
+                conn.execute("""
+                    DELETE FROM decisions WHERE id IN (
+                        SELECT id FROM decisions ORDER BY timestamp ASC LIMIT ?
+                    )
+                """, (delete_count,))
+                conn.commit()
+                logger.info(f"Cleaned up {delete_count} old decisions")
+
+    def search_decisions(self, keyword: Optional[str] = None, limit: int = 20) -> list:
+        """Search decisions, optionally filtered by keyword."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if keyword:
+                keyword = sanitize_input(keyword, 100)
+                cursor = conn.execute("""
+                    SELECT * FROM decisions
+                    WHERE decision LIKE ? OR rationale LIKE ? OR context LIKE ?
+                    ORDER BY timestamp DESC LIMIT ?
+                """, (f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", limit))
+            else:
+                cursor = conn.execute("""
+                    SELECT * FROM decisions ORDER BY timestamp DESC LIMIT ?
+                """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def upsert_pattern(self, name: str, description: str,
+                       example: str = "", when_to_use: str = "") -> bool:
+        """Add or update a pattern. Returns True if successful."""
+        if not validate_key(name):
+            return False
+
+        # Enforce limits
+        self._enforce_pattern_limit()
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO patterns (name, description, example, when_to_use, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(name) DO UPDATE SET
+                    description = excluded.description,
+                    example = excluded.example,
+                    when_to_use = excluded.when_to_use,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                name,
+                sanitize_input(description),
+                sanitize_input(example),
+                sanitize_input(when_to_use)
+            ))
+            conn.commit()
+            return True
+
+    def _enforce_pattern_limit(self):
+        """Remove oldest patterns if limit exceeded."""
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0]
+            if count >= MAX_PATTERNS:
+                # Delete oldest by updated_at
+                conn.execute("""
+                    DELETE FROM patterns WHERE id IN (
+                        SELECT id FROM patterns ORDER BY updated_at ASC LIMIT 1
+                    )
+                """)
+                conn.commit()
+
+    def get_patterns(self) -> list:
+        """Get all stored patterns."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM patterns ORDER BY name")
+            return [dict(row) for row in cursor.fetchall()]
+
+    def set_context(self, key: str, value: str) -> bool:
+        """Set a context key-value pair. Returns True if successful."""
+        if not validate_key(key):
+            return False
+
+        # Enforce limits
+        self._enforce_context_limit()
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO context (key, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (key, sanitize_input(value)))
+            conn.commit()
+            return True
+
+    def _enforce_context_limit(self):
+        """Remove oldest context entries if limit exceeded."""
+        with sqlite3.connect(self.db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM context").fetchone()[0]
+            if count >= MAX_CONTEXT_KEYS:
+                conn.execute("""
+                    DELETE FROM context WHERE key IN (
+                        SELECT key FROM context ORDER BY updated_at ASC LIMIT 1
+                    )
+                """)
+                conn.commit()
+
+    def get_context(self) -> dict:
+        """Get all context key-value pairs."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT key, value FROM context")
+            return {row[0]: row[1] for row in cursor.fetchall()}
+
+    def get_stats(self) -> dict:
+        """Get database statistics."""
+        with sqlite3.connect(self.db_path) as conn:
+            stats = {
+                "decisions": conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0],
+                "patterns": conn.execute("SELECT COUNT(*) FROM patterns").fetchone()[0],
+                "context_keys": conn.execute("SELECT COUNT(*) FROM context").fetchone()[0],
+                "db_size_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
+                "limits": {
+                    "max_decisions": MAX_DECISIONS,
+                    "max_patterns": MAX_PATTERNS,
+                    "max_context_keys": MAX_CONTEXT_KEYS
+                }
+            }
+            return stats
+
+
+def get_db_path() -> Path:
+    """Determine database path based on current project."""
+    # Check for custom path
+    if custom_path := os.environ.get("PROJECT_MEMORY_DB"):
+        return Path(custom_path)
+
+    # Default: ~/.claude/project-memories/{project_name}.db
+    project_name = Path.cwd().name
+    # Sanitize project name for filesystem
+    safe_name = re.sub(r'[^\w\-]', '_', project_name)
+    return Path.home() / ".claude" / "project-memories" / f"{safe_name}.db"
+
+
+# Initialize server and database
+server = Server("project-memory")
+db: Optional[ProjectMemoryDB] = None
+
+
+def get_db() -> ProjectMemoryDB:
+    """Get or initialize the database."""
+    global db
+    if db is None:
+        db = ProjectMemoryDB(get_db_path())
+    return db
+
+
+@server.list_tools()
+async def list_tools():
+    """List available tools."""
+    return [
+        Tool(
+            name="remember_decision",
+            description="Store a decision and its rationale for future sessions. Use this to preserve important architectural choices, trade-offs, and reasoning.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "decision": {
+                        "type": "string",
+                        "description": "The decision made (max 10000 chars)",
+                        "maxLength": 10000
+                    },
+                    "rationale": {
+                        "type": "string",
+                        "description": "Why this decision was made",
+                        "maxLength": 10000
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "What problem this solved or what triggered the decision",
+                        "maxLength": 10000
+                    },
+                    "alternatives": {
+                        "type": "string",
+                        "description": "Other options that were considered",
+                        "maxLength": 10000
+                    }
+                },
+                "required": ["decision", "rationale"]
+            }
+        ),
+        Tool(
+            name="recall_decisions",
+            description="Retrieve past decisions, optionally filtered by keyword search. Useful for understanding why things are the way they are.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "Optional keyword to filter decisions (max 100 chars)",
+                        "maxLength": 100
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of decisions to return (default 20, max 100)",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 20
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="store_pattern",
+            description="Store a code pattern or convention for this project. Patterns are named and can be updated.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Pattern name (alphanumeric, underscores, hyphens, dots only)",
+                        "pattern": "^[\\w\\-\\.]+$",
+                        "maxLength": 100
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "What this pattern does and why it's used",
+                        "maxLength": 10000
+                    },
+                    "example": {
+                        "type": "string",
+                        "description": "Code example demonstrating the pattern",
+                        "maxLength": 10000
+                    },
+                    "when_to_use": {
+                        "type": "string",
+                        "description": "Guidelines for when to apply this pattern",
+                        "maxLength": 10000
+                    }
+                },
+                "required": ["name", "description"]
+            }
+        ),
+        Tool(
+            name="get_patterns",
+            description="Retrieve all stored patterns for this project.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="set_context",
+            description="Store contextual information as a key-value pair. Keys must be alphanumeric (underscores/hyphens allowed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Context key (alphanumeric, underscores, hyphens, dots only)",
+                        "pattern": "^[\\w\\-\\.]+$",
+                        "maxLength": 100
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Context value",
+                        "maxLength": 10000
+                    }
+                },
+                "required": ["key", "value"]
+            }
+        ),
+        Tool(
+            name="get_context",
+            description="Retrieve all stored context key-value pairs for this project.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="memory_stats",
+            description="Get statistics about stored memory (counts, limits, database size).",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        )
+    ]
+
+
+@server.call_tool()
+async def call_tool(name: str, arguments: dict) -> list:
+    """Handle tool calls."""
+    try:
+        database = get_db()
+
+        if name == "remember_decision":
+            decision = arguments.get("decision", "")
+            rationale = arguments.get("rationale", "")
+
+            if not decision or not rationale:
+                return [TextContent(type="text", text="❌ Error: decision and rationale are required")]
+
+            decision_id = database.add_decision(
+                decision=decision,
+                rationale=rationale,
+                context=arguments.get("context", ""),
+                alternatives=arguments.get("alternatives", "")
+            )
+
+            logger.info(f"Stored decision #{decision_id}: {decision[:50]}...")
+            return [TextContent(
+                type="text",
+                text=f"✓ Decision #{decision_id} stored: {decision[:100]}{'...' if len(decision) > 100 else ''}"
+            )]
+
+        elif name == "recall_decisions":
+            keyword = arguments.get("keyword")
+            limit = min(arguments.get("limit", 20), 100)
+
+            decisions = database.search_decisions(keyword=keyword, limit=limit)
+
+            if not decisions:
+                msg = f"No decisions found" + (f" matching '{keyword}'" if keyword else "")
+                return [TextContent(type="text", text=msg)]
+
+            output = "## Stored Decisions\n\n"
+            for d in decisions:
+                output += f"### Decision #{d['id']} ({d['timestamp'][:10]})\n"
+                output += f"**Decision**: {d['decision']}\n\n"
+                output += f"**Rationale**: {d['rationale']}\n\n"
+                if d.get('context'):
+                    output += f"**Context**: {d['context']}\n\n"
+                if d.get('alternatives'):
+                    output += f"**Alternatives considered**: {d['alternatives']}\n\n"
+                output += "---\n\n"
+
+            return [TextContent(type="text", text=output)]
+
+        elif name == "store_pattern":
+            pattern_name = arguments.get("name", "")
+            description = arguments.get("description", "")
+
+            if not pattern_name or not description:
+                return [TextContent(type="text", text="❌ Error: name and description are required")]
+
+            if not validate_key(pattern_name):
+                return [TextContent(
+                    type="text",
+                    text="❌ Error: name must be alphanumeric (underscores, hyphens, dots allowed)"
+                )]
+
+            success = database.upsert_pattern(
+                name=pattern_name,
+                description=description,
+                example=arguments.get("example", ""),
+                when_to_use=arguments.get("when_to_use", "")
+            )
+
+            if success:
+                logger.info(f"Stored pattern: {pattern_name}")
+                return [TextContent(type="text", text=f"✓ Pattern stored: {pattern_name}")]
+            else:
+                return [TextContent(type="text", text="❌ Error: Failed to store pattern")]
+
+        elif name == "get_patterns":
+            patterns = database.get_patterns()
+
+            if not patterns:
+                return [TextContent(type="text", text="No patterns stored yet.")]
+
+            output = "## Project Patterns\n\n"
+            for p in patterns:
+                output += f"### {p['name']}\n"
+                output += f"{p['description']}\n\n"
+                if p.get('when_to_use'):
+                    output += f"**When to use**: {p['when_to_use']}\n\n"
+                if p.get('example'):
+                    output += f"**Example**:\n```\n{p['example']}\n```\n\n"
+                output += "---\n\n"
+
+            return [TextContent(type="text", text=output)]
+
+        elif name == "set_context":
+            key = arguments.get("key", "")
+            value = arguments.get("value", "")
+
+            if not key or not value:
+                return [TextContent(type="text", text="❌ Error: key and value are required")]
+
+            if not validate_key(key):
+                return [TextContent(
+                    type="text",
+                    text="❌ Error: key must be alphanumeric (underscores, hyphens, dots allowed)"
+                )]
+
+            success = database.set_context(key, value)
+
+            if success:
+                logger.info(f"Set context: {key}")
+                return [TextContent(type="text", text=f"✓ Context set: {key}")]
+            else:
+                return [TextContent(type="text", text="❌ Error: Failed to set context")]
+
+        elif name == "get_context":
+            context = database.get_context()
+
+            if not context:
+                return [TextContent(type="text", text="No context stored yet.")]
+
+            output = "## Project Context\n\n"
+            for k, v in sorted(context.items()):
+                output += f"**{k}**: {v}\n\n"
+
+            return [TextContent(type="text", text=output)]
+
+        elif name == "memory_stats":
+            stats = database.get_stats()
+
+            output = "## Memory Statistics\n\n"
+            output += f"**Decisions stored**: {stats['decisions']} / {stats['limits']['max_decisions']}\n"
+            output += f"**Patterns stored**: {stats['patterns']} / {stats['limits']['max_patterns']}\n"
+            output += f"**Context keys**: {stats['context_keys']} / {stats['limits']['max_context_keys']}\n"
+            output += f"**Database size**: {stats['db_size_bytes'] / 1024:.1f} KB\n"
+            output += f"\n**Database location**: `{get_db_path()}`\n"
+
+            return [TextContent(type="text", text=output)]
+
+        else:
+            return [TextContent(type="text", text=f"❌ Unknown tool: {name}")]
+
+    except Exception as e:
+        logger.exception(f"Error in tool {name}")
+        return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
+
+
+async def main():
+    """Run the MCP server."""
+    logger.info(f"Starting Project Memory MCP Server")
+    logger.info(f"Database: {get_db_path()}")
+    logger.info(f"Limits: {MAX_DECISIONS} decisions, {MAX_PATTERNS} patterns, {MAX_CONTEXT_KEYS} context keys")
+
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream)
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
