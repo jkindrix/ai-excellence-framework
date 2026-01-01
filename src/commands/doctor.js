@@ -214,6 +214,89 @@ const DIAGNOSTICS = [
         hint: !existsSync(tmpPath) ? 'Will be created when needed' : undefined
       };
     }
+  },
+  {
+    id: 'mcp-server-installed',
+    name: 'MCP server installed',
+    category: 'framework',
+    check: async () => {
+      const cwd = process.cwd();
+      const mcpServerPath = join(cwd, 'scripts', 'mcp', 'project-memory-server.py');
+
+      if (!existsSync(mcpServerPath)) {
+        return {
+          passed: false,
+          value: 'Not installed',
+          hint: 'Run: npx ai-excellence init --preset full'
+        };
+      }
+
+      return {
+        passed: true,
+        value: 'Installed'
+      };
+    }
+  },
+  {
+    id: 'mcp-server-syntax',
+    name: 'MCP server syntax valid',
+    category: 'health',
+    check: async () => {
+      const cwd = process.cwd();
+      const mcpServerPath = join(cwd, 'scripts', 'mcp', 'project-memory-server.py');
+
+      if (!existsSync(mcpServerPath)) {
+        return {
+          passed: true,
+          value: 'N/A (not installed)'
+        };
+      }
+
+      try {
+        execSync(`python3 -m py_compile "${mcpServerPath}"`, { encoding: 'utf-8', stdio: 'pipe' });
+        return {
+          passed: true,
+          value: 'Valid'
+        };
+      } catch {
+        return {
+          passed: false,
+          value: 'Syntax errors',
+          hint: 'Check MCP server for Python syntax errors'
+        };
+      }
+    }
+  },
+  {
+    id: 'mcp-database',
+    name: 'MCP database accessible',
+    category: 'health',
+    check: async () => {
+      const cwd = process.cwd();
+      const dbPath = join(cwd, '.tmp', 'memory.db');
+
+      if (!existsSync(dbPath)) {
+        return {
+          passed: true,
+          value: 'Not created yet (will be created on first use)'
+        };
+      }
+
+      try {
+        const stats = statSync(dbPath);
+        const sizeKb = Math.round(stats.size / 1024);
+        return {
+          passed: true,
+          value: `${sizeKb} KB`
+        };
+      } catch {
+        return {
+          passed: false,
+          value: 'Cannot access',
+          hint: 'Check file permissions on .tmp/memory.db'
+        };
+      }
+    }
   }
 ];
 
@@ -221,9 +304,13 @@ const DIAGNOSTICS = [
  * Main doctor command handler
  */
 export async function doctorCommand(options) {
-  console.log(chalk.cyan('\n  AI Excellence Framework Doctor\n'));
+  const json = options.json || false;
 
-  const spinner = ora('Running diagnostics...').start();
+  if (!json) {
+    console.log(chalk.cyan('\n  AI Excellence Framework Doctor\n'));
+  }
+
+  const spinner = json ? null : ora('Running diagnostics...').start();
 
   const results = {
     environment: [],
@@ -252,20 +339,46 @@ export async function doctorCommand(options) {
     }
   }
 
-  spinner.stop();
+  if (spinner) {
+    spinner.stop();
+  }
 
-  // Print results by category
-  printDiagnosticResults(results, options.verbose);
-
-  // Summary
+  // Calculate summary
   const totalPassed = Object.values(results)
     .flat()
     .filter(r => r.result.passed).length;
   const total = DIAGNOSTICS.length;
+  const allPassed = totalPassed === total;
+
+  // JSON output
+  if (json) {
+    const jsonOutput = {
+      healthy: allPassed,
+      passed: totalPassed,
+      total,
+      checks: Object.entries(results).reduce((acc, [category, items]) => {
+        acc[category] = items.map(item => ({
+          id: item.id,
+          name: item.name,
+          passed: item.result.passed,
+          value: item.result.value,
+          required: item.result.required,
+          hint: item.result.hint,
+          error: item.result.error
+        }));
+        return acc;
+      }, {})
+    };
+    console.log(JSON.stringify(jsonOutput, null, 2));
+    return;
+  }
+
+  // Print results by category
+  printDiagnosticResults(results, options.verbose);
 
   console.log(chalk.white(`\n  Summary: ${totalPassed}/${total} checks passed\n`));
 
-  if (totalPassed === total) {
+  if (allPassed) {
     console.log(chalk.green('  ✓ All systems operational!\n'));
   } else {
     console.log(chalk.yellow('  ⚠ Some issues detected. See hints above.\n'));

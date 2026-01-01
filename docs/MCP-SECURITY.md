@@ -371,10 +371,8 @@ As 2025 emerges as the "year of LLM agents," the framework includes specific mit
 
 ---
 
-## Version History
+## Document History
 
-| Version | Date       | Changes                                                    |
-| ------- | ---------- | ---------------------------------------------------------- |
-| 1.2.0   | 2024-12-30 | Added OWASP LLM Top 10 2025 alignment, agentic AI security |
-| 1.1.0   | 2024-12-30 | Added connection pooling, rate limiting                    |
-| 1.0.0   | 2024-12-29 | Initial security documentation                             |
+| Date       | Changes                                                    |
+| ---------- | ---------------------------------------------------------- |
+| 2026-01-01 | Initial release with framework v1.0.0                      |

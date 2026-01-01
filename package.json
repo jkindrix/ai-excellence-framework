@@ -1,6 +1,6 @@
 {
   "name": "ai-excellence-framework",
-  "version": "1.9.0",
+  "version": "1.0.0",
   "description": "Universal framework for AI-assisted development - works with Claude, Cursor, Copilot, Windsurf, Aider, Gemini CLI, Codex, Zed, Amp, Roo Code, JetBrains Junie, Cline, Goose, Kiro, Continue, Augment, Qodo, OpenCode, and Zencoder",
   "type": "module",
   "main": "src/index.js",
@@ -17,7 +17,9 @@
     "./commands/init": "./src/commands/init.js",
     "./commands/validate": "./src/commands/validate.js",
     "./commands/doctor": "./src/commands/doctor.js",
-    "./commands/update": "./src/commands/update.js"
+    "./commands/update": "./src/commands/update.js",
+    "./commands/uninstall": "./src/commands/uninstall.js",
+    "./commands/detect": "./src/commands/detect.js"
   },
   "bin": {
     "ai-excellence": "./bin/cli.js",
@@ -44,9 +46,13 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "prepublishOnly": "npm run validate && npm run test:all",
+    "prepublishOnly": "npm run verify-publish",
+    "verify-publish": "node scripts/verify-publish.js --skip-tests && npm run validate && npm run test:all",
+    "verify-publish:quick": "node scripts/verify-publish.js --skip-tests",
     "prepare": "node scripts/prepare.js",
-    "postinstall": "node scripts/postinstall.js || true"
+    "postinstall": "node scripts/postinstall.js || true",
+    "benchmark": "node scripts/benchmark.js",
+    "benchmark:json": "node scripts/benchmark.js --json"
   },
   "keywords": [
     "ai",
@@ -121,11 +127,13 @@
     "src/",
     "types/",
     "templates/",
-    ".claude/",
+    ".claude/commands/",
+    ".claude/agents/",
     "scripts/hooks/",
     "scripts/mcp/*.py",
     "scripts/health/",
     "scripts/metrics/",
+    "completions/",
     "CLAUDE.md",
     "README.md",
     "CHANGELOG.md",
@@ -149,9 +157,12 @@
     "docs/TEAM-MEMORY-FEDERATION.md",
     "docs/MODEL-SELECTION.md",
     "docs/BENCHMARKS.md",
+    "docs/API.md",
+    "docs/MIGRATION.md",
     "docs/changelog.md",
     "docs/getting-started.md",
-    "docs/guides/"
+    "docs/guides/",
+    "examples/"
   ],
   "dependencies": {
     "chalk": "^5.3.0",

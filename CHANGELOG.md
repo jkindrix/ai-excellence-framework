@@ -9,635 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- npm registry publication
 - VitePress documentation site deployment
 - Real-world team usage metrics dashboard
+- Interactive setup wizard
+- VS Code extension
 
-## [1.9.0] - 2026-01-01
+## [1.0.0] - 2026-01-01
 
-### Added
+### Initial Release
 
-#### New AI Tool Support (2 new tools → 22 total)
-
-- **OpenCode AI** (`opencode.json`, `.opencode/`)
-  - JSON configuration with schema validation
-  - Markdown-based agent definitions (`.opencode/agents/`)
-  - Instructions file for project context
-  - Model, tools, and formatter configuration
-  - Rules array for coding standards
-
-- **Zencoder (Zen Rules)** (`.zencoder/rules/`)
-  - YAML frontmatter with globs and priority
-  - Project rules with coding conventions
-  - Security rules with OWASP guidelines
-  - Testing rules with coverage requirements
-  - JSON configuration (`zencoder.json`)
-
-#### Claude Agent SDK Documentation
-
-- **Agent SDK Guide** (`docs/AGENT-SDK.md`)
-  - Python and TypeScript SDK installation
-  - Built-in tools reference (Read, Write, Edit, Bash, Glob, Grep, etc.)
-  - Subagent configuration examples
-  - MCP server integration
-  - Hooks system for agent lifecycle
-  - Session management for context preservation
-  - Permission modes for tool control
-  - Integration with AI Excellence Framework
-
-#### Google Antigravity Compatibility
-
-- **IDE Integration** updated with Windsurf/Antigravity section
-  - Antigravity is Google's fork of Windsurf
-  - Fully compatible with Windsurf configurations
-  - Memory configuration support
-  - Generation command integration
-
-### Changed
-
-- **Generate Command** now supports 22 AI tools (up from 20)
-  - Added: opencode, zencoder
-  - Total output message updated to reflect 21 tools
-- **VitePress Configuration** updated to v1.9.0
-  - Added Claude Agent SDK documentation link
-  - Updated navigation version dropdown
-- **IDE Integration Guide** enhanced
-  - Added Windsurf & Google Antigravity section
-  - Updated table of contents
-- **Test Suite** expanded with v1.9.0 generator tests
-  - 4 new test cases for OpenCode and Zencoder
-  - Updated SUPPORTED_TOOLS count verification
-
-### Technical Details
-
-- **Files Added**:
-  - `docs/AGENT-SDK.md` - Claude Agent SDK documentation
-  - 2 new generator functions in `generate.js`
-  - 4 new test cases in `generate.test.js`
-
-- **Files Modified**:
-  - `src/commands/generate.js` - Added OpenCode and Zencoder generators
-  - `tests/generate.test.js` - Added v1.9.0 test suite
-  - `docs/.vitepress/config.mjs` - Updated to v1.9.0
-  - `docs/IDE-INTEGRATION.md` - Added Windsurf/Antigravity section
-  - `package.json` - Version bump to 1.9.0
-
-## [1.8.0] - 2026-01-01
+The AI Excellence Framework is a comprehensive, universal framework for reducing friction in AI-assisted software development. This initial release includes support for 25 AI coding tools, a full CLI, MCP server, and extensive documentation.
 
 ### Added
-
-#### New AI Tool Support (5 new tools → 20 total)
-
-- **Claude Code Plugins** (`.claude-plugin/`)
-  - Plugin manifest (`plugin.json`) generation
-  - Plugin README with structure documentation
-  - Supports commands, agents, skills, hooks, and MCP bundling
-  - Marketplace distribution support
-
-- **Kiro CLI** (`.kiro/`) - AWS Q Developer successor
-  - MCP configuration (`mcp.json`)
-  - Steering rules directory (`steering/`)
-  - Full backwards compatibility with Q Developer
-
-- **Continue.dev** (`.continue/`)
-  - `config.yaml` configuration file
-  - Rules directory for team standards
-  - Context providers configuration
-  - MCP server integration
-
-- **Augment Code** (`.augment/`)
-  - Augment Rules for agent behavior
-  - MCP configuration support
-  - Custom command guidance
-
-- **Qodo AI** (`qodo.toml`, `best_practices.md`)
-  - TOML-based agent configuration
-  - Best practices auto-generation
-  - Modes: Ask, Code, Plan
-  - CI/CD integration support
-
-#### AAIF (Agentic AI Foundation) Support
-
-- **AAIF Documentation** (`docs/AAIF.md`)
-  - Linux Foundation governance overview
-  - Core projects: MCP, AGENTS.md, Goose
-  - Founding members and timeline
-  - Integration guidelines
-
-- **AGENTS.md AAIF Attribution**
-  - All generated AGENTS.md files now reference AAIF
-  - Linux Foundation governance acknowledgment
-
-#### MCP June 2025 Specification Updates
-
-- **MCP OAuth Guide** (`docs/MCP-OAUTH.md`)
-  - OAuth-based authorization (RFC 6749)
-  - Resource Indicators (RFC 8707)
-  - Elicitation for server-initiated user interactions
-  - Structured tool outputs
-  - Security best practices
-
-#### Cross-Platform Skills Compatibility
-
-- **GitHub Copilot Auto-Discovery**
-  - Copilot now auto-discovers `.claude/skills/`
-  - Cross-platform compatibility matrix
-  - Updated Skills README documentation
-
-### Changed
-
-- **Generate Command** now supports 20 AI tools (up from 15)
-  - Added: plugins, kiro, continue, augment, qodo
-  - Total output message updated to reflect 19 tools
-- **VitePress Configuration** updated to v1.8.0
-  - Added AAIF and MCP OAuth documentation links
-  - Updated copyright to 2024-2026
-- **Test Suite** expanded with v1.8.0 generator tests
-  - 8 new test cases for new generators
-  - AAIF attribution verification
-
-### Technical Details
-
-- **Files Added**:
-  - `docs/AAIF.md` - AAIF documentation
-  - `docs/MCP-OAUTH.md` - MCP OAuth guide
-  - 5 new generator functions in `generate.js`
-  - 8 new test cases in `generate.test.js`
-
-- **Files Modified**:
-  - `src/commands/generate.js` - New generators
-  - `tests/generate.test.js` - New test suite
-  - `docs/.vitepress/config.mjs` - v1.8.0 navigation
-  - `templates/skills/README.md` - Compatibility matrix
-  - `package.json` - Version bump
-
-## [1.7.0] - 2026-01-01
-
-### Added
-
-#### Universal Agent Skills Support
-
-- **Skills (SKILL.md) Generation**
-  - Universal agent skills specification support
-  - Auto-generates `project-standards` and `security-review` skills
-  - Compatible with GitHub Copilot, OpenAI Codex, and Claude Code
-  - Skills templates in `templates/skills/` directory
-  - YAML frontmatter with name, description, and allowed-tools
-
-#### New AI Tool Integrations
-
-- **JetBrains Junie Support** (`.junie/guidelines.md`)
-  - Full guidelines.md generation
-  - Technology-specific conventions
-  - Antipatterns documentation
-  - References JetBrains guidelines catalog
-
-- **Cline Support** (`.clinerules`)
-  - Single-file rules format
-  - Plan Mode and Act Mode guidance
-  - Cline-specific workflow documentation
-
-- **Block Goose Support** (`.goose/`)
-  - Extensions.yaml with recommended MCP servers
-  - README with quick start guide
-  - AAIF-aligned configuration
-
-- **Windsurf Single-File Format** (`.windsurfrules`)
-  - Alternative to `.windsurf/rules/` directory
-  - Compact single-file configuration
-
-#### MCP Protocol Updates
-
-- **MCP Tasks Guide** (`docs/MCP-TASKS.md`)
-  - November 2025 specification (2025-11-25)
-  - Async task execution patterns
-  - Long-running operation support
-  - Task lifecycle management
-  - Integration examples
-
-- **MCP Registry Guide** (`docs/MCP-REGISTRY.md`)
-  - Official registry integration
-  - Docker MCP Catalog support
-  - GitHub MCP Registry documentation
-  - Security best practices for server installation
-
-#### Skills Templates
-
-- **Project Standards Skill** (`templates/skills/project-standards/`)
-- **Security Review Skill** (`templates/skills/security-review/`)
-- **Test-Driven Skill** (`templates/skills/test-driven/`)
-- Skills README with usage documentation
-
-### Changed
-
-- **Generate Command** now supports 15 AI tools (up from 11)
-  - Added: skills, junie, cline, goose
-  - Windsurf now generates both directory and single-file formats
-- **VitePress Configuration** updated to v1.7.0
-  - Added MCP Tasks and MCP Registry links
-  - Updated navigation with new documentation
-- **Test Suite** expanded with new generator tests
-
-### Technical
-
-- Generate command extended to 1900+ lines with new generators
-- Tests cover all new tool generators
-- Documentation aligned with January 2026 ecosystem
-
-## [1.6.0] - 2025-12-30
-
-### Added
-
-#### Industry Standards Alignment
-
-- **Agentic AI Foundation (AAIF) Integration**
-  - Updated documentation to reference AAIF standards (launched Dec 9, 2025)
-  - MCP, AGENTS.md, and goose now under Linux Foundation governance
-  - Added AAIF research citations (10,000+ MCP servers, 60,000+ AGENTS.md repos)
-
-- **2025 DORA Report Integration**
-  - New `DORA-INTEGRATION.md` guide for DevOps metrics
-  - Seven team archetypes replacing elite/high/medium/low model
-  - AI amplification principle documentation
-  - Platform engineering as AI foundation guidance
-
-#### Database & Deployment
-
-- **PostgreSQL Deployment Guide** (`POSTGRESQL-DEPLOYMENT.md`)
-  - Full schema and migration scripts
-  - Connection pooling configuration
-  - High availability setup with Docker Compose
-  - Row-level security for multi-tenant deployments
-  - SQLite to PostgreSQL migration script
-
-#### Security Enhancements
-
-- **New AI Security Check Hook** (`check-ai-security.sh`)
-  - Detects eval() usage
-  - Finds hardcoded credentials
-  - Identifies SQL injection patterns
-  - Catches command injection risks
-
-### Changed
-
-- **Model Selection Guide** updated with December 2025 benchmarks
-  - SWE-Bench Pro rankings added (Claude Opus 4.5 leads at 45.89%)
-  - Terminal-bench 2.0 CLI proficiency scores
-  - DeepSeek V3.2 added as open source leader
-- **Research Citations** updated with AAIF and DORA 2025 findings
-- **VitePress Navigation** includes new guides
-- **Pre-commit Configuration** simplified with external scripts
-
-### Fixed
-
-- YAML syntax error in pre-commit configuration template
-- Prettier formatting applied to all files
-- ESLint errors auto-fixed
-
-## [1.5.0] - 2025-12-30
-
-### Added
-
-#### Multi-Tool Support Expansion
-
-- **5 new AI coding tools supported** (total: 10 tools)
-  - Google Gemini CLI (`GEMINI.md`)
-  - OpenAI Codex CLI (`.codex/`)
-  - Zed Editor (`.rules`)
-  - Sourcegraph Amp (`amp.toml`)
-  - Roo Code (`.roo/rules/`)
-- Updated `generate` command to support all 10 tools
-- Tool-specific configuration generators for each platform
-
-#### Language-Specific Security Rules
-
-- **Python security patterns** in `/security-review`
-  - SQL injection via string formatting
-  - Command injection via subprocess
-  - Pickle deserialization vulnerabilities
-  - Path traversal patterns
-- **Go security patterns**
-  - SQL injection patterns
-  - Command injection via os/exec
-  - Unchecked error handling
-  - Race conditions (TOCTOU)
-- **Rust security patterns**
-  - Unwrap/expect panic risks
-  - Integer overflow detection
-  - Unsafe block auditing
-  - SQL via format strings
-
-#### Model Selection Guidance
-
-- **Comprehensive model selection document** (`docs/MODEL-SELECTION.md`)
-  - Multi-provider coverage (Claude, GPT, Gemini)
-  - SWE-Bench 2025 benchmark comparisons
-  - Cost optimization matrix
-  - Tool-specific configuration examples
-  - Decision matrix for model selection
-
-#### Community Infrastructure
-
-- **CODE_OF_CONDUCT.md** - Contributor Covenant 2.1
-- **SECURITY.md** - Vulnerability reporting policy
-  - Supported versions table
-  - Response timeline commitments
-  - Security best practices
-
-#### GitHub Templates Enhancement
-
-- **Issue template config** with contact links
-- **Discussion templates**
-  - Questions template
-  - Ideas template
-  - Show & Tell template
-
-#### Benchmarks Documentation
-
-- **BENCHMARKS.md** - Performance measurements
-  - CLI performance benchmarks
-  - MCP server load testing results
-  - Security improvement metrics
-  - Productivity benchmarks
-  - Historical version comparison
-
-### Changed
-
-- **Getting started guide** enhanced with
-  - 30-second quick setup TL;DR
-  - ASCII workflow diagram
-  - First 10 minutes walkthrough
-  - Multi-tool support documentation
-- **Package description** updated to reflect 10-tool support
-- **Keywords** expanded for discoverability
-
-### Fixed
-
-- Excluded `__pycache__` from npm package
-- Added missing files to npm package (`CODE_OF_CONDUCT.md`, `SECURITY.md`, `BENCHMARKS.md`)
-
-### Security
-
-- Language-specific security patterns for Python, Go, and Rust
-- Enhanced pre-commit hook coverage
-
-## [1.4.0] - 2025-12-30
-
-### Added
-
-#### Documentation & Guides
-
-- **Enterprise Deployment Guide** (`docs/guides/enterprise.md`)
-  - Complete enterprise architecture diagrams
-  - Three deployment models (Decentralized, Centralized, Federated)
-  - SOC 2 and GDPR compliance guidance
-  - Policy enforcement configuration
-  - Horizontal scaling with Kubernetes HPA
-  - Disaster recovery procedures with RTO/RPO targets
-  - Cost optimization recommendations
-
-- **VS Code Integration Guide** (`docs/guides/vscode-integration.md`)
-  - Workspace settings configuration
-  - Recommended extensions list
-  - Custom keyboard shortcuts
-  - Markdown snippets for decisions and sessions
-  - VS Code tasks for CLI commands
-  - Cursor-specific configuration
-
-- **Getting Started Guide** (`docs/getting-started.md`)
-  - Quick 5-minute setup walkthrough
-  - Preset comparison table
-  - Common workflow examples
-  - First AI session tutorial
-
-#### Tooling
-
-- **CLAUDE.md Health Monitor** (`scripts/health/claude-md-monitor.sh`)
-  - Automatic health checks for CLAUDE.md files
-  - 10+ validation rules (size, freshness, secrets, sections)
-  - Auto-fix mode for simple issues
-  - JSON output for CI/CD integration
-  - Placeholder text detection
-
-- **Friction Metrics System** (`scripts/metrics/friction-metrics.js`)
-  - Opt-in local metrics collection
-  - 14 event types for tracking AI interaction patterns
-  - Privacy-first design (no PII, local storage only)
-  - Report generation with calculated statistics
-  - Export to JSON/CSV formats
-
-#### GitHub Integration
-
-- **Issue Templates**
-  - Bug report template with component dropdown
-  - Feature request template with impact assessment
-  - Structured YAML-based forms
-
-- **Pull Request Template**
-  - Comprehensive checklist
-  - Security considerations section
-  - Change type classification
-
-### Changed
-
-- Updated VitePress navigation to v1.3.0
-- Added enterprise and VS Code guides to navigation
-- Updated documentation URLs from placeholder to actual GitHub repo
-
-### Fixed
-
-- Documentation URL placeholder in init.js (was "your-username")
-- GitHub URL in troubleshooting guide
-
-## [1.3.0] - 2024-12-30
-
-### Added
-
-#### Documentation
-
-- **CONTRIBUTING.md** - Comprehensive contribution guidelines
-  - Code of conduct, development setup, PR process
-  - Coding standards for JavaScript, Python, and Shell
-  - Testing and documentation guidelines
-  - Security and release process documentation
-- **Architecture Documentation** (`docs/ARCHITECTURE.md`)
-  - System overview with ASCII diagrams
-  - Component architecture (Context, Command, Agent, Persistence layers)
-  - Data flow diagrams (session start, command execution, commit flow)
-  - Security architecture with input validation chain
-  - Extension points and performance considerations
-- **Session Notes Examples** (`docs/session-notes/`)
-  - Example session handoff document
-  - Session notes README with templates
-- **MCP Authentication Documentation** - Enhanced security guide
-  - API key authentication with client configuration
-  - Multi-user authentication options (shared key, reverse proxy, OAuth2)
-  - Role-based access control (RBAC) future roadmap
-  - IP allowlist configuration
-
-#### Testing
-
-- **E2E Tests** (`tests/e2e.test.js`) - Real CLI invocation tests
-  - CLI binary invocation (version, help, command-specific help)
-  - Init command with all presets
-  - Validate command with fix mode
-  - Doctor command diagnostics
-  - Configuration file validation
-  - File permissions verification
-  - Error handling edge cases
-  - Programmatic API exports
-- **Input Validation Utilities** (`src/utils/validation.js`)
-  - Path validation with traversal prevention
-  - Preset and project name validation
-  - Configuration object validation
-  - String sanitization with HTML escaping
-  - Secret detection patterns
-
-#### CI/CD Enhancements
-
-- **SBOM Generation** - CycloneDX format for supply chain transparency
-- **Vulnerability Scanning** - OSV-Scanner and npm audit integration
-- **ShellCheck Strict Mode** - Enforced shell script linting
-- **CVE Detection** - Automatic detection of critical vulnerabilities
-
-#### Programmatic API
-
-- **Extended exports in `src/index.js`**
-  - `checkInstallation()` - Check framework installation status
-  - `listInstalledCommands()` - Get installed slash commands
-  - `listInstalledAgents()` - Get installed agents
-  - `readClaudeMd()` / `parseClaudeMd()` - Parse CLAUDE.md files
-  - `detectSecrets()` - Check content for secrets
-  - `validateClaudeMdStructure()` - Validate CLAUDE.md structure
-  - `getPackageRoot()` / `getPresetPath()` - Get framework paths
-
-### Fixed
-
-- **CLI Exit Codes** - Fixed `--version` and `--help` returning non-zero exit codes
-- **E2E Test ESM Compatibility** - Replaced `require()` with ESM imports
-
-### Changed
-
-- **VitePress Navigation** - Added Architecture and Contributing sections
-- **CI Pipeline** - Added SBOM and vulnerability-scan jobs to final status check
-
-## [1.2.0] - 2024-12-30
-
-### Added
-
-#### Documentation
-
-- **When AI Helps Guide** (`docs/WHEN-AI-HELPS.md`) - Balanced perspective on when AI coding assistants provide value
-  - Research-backed guidance: junior devs see 27-39% gains, senior devs 7-16%
-  - Decision matrix for when to use vs. skip AI assistance
-  - Integration with METR study and MIT/NBER research
-- **Research Citations Enhancement** - Added 10+ new verified statistics from 2025 sources
-  - Apiiro Fortune 50 study (322% privilege escalation, 153% design flaws)
-  - JetBrains State of Developer Ecosystem 2025
-  - Accenture/GitHub Copilot enterprise study
-  - MIT/NBER productivity research
-- **OWASP LLM Top 10 2025 Alignment** - Added to MCP-SECURITY.md
-  - Mapped framework mitigations to all 10 risks
-  - Added Agentic AI security considerations
-
-#### Testing
-
-- **Edge Case Tests** (`tests/edge-cases.test.js`) - Comprehensive boundary testing
-  - Malformed input handling (whitespace, binary, long lines, unicode)
-  - Path edge cases (spaces, unicode, deep nesting, symlinks)
-  - Security pattern detection (15+ secret patterns)
-  - Package name validation (npm naming rules)
-  - YAML frontmatter parsing
-  - Semver validation
-  - Error code format validation
-  - Concurrent file access
-  - File encoding handling (BOM, mixed line endings)
-
-#### CI/CD
-
-- **Enhanced Release Workflow** - Complete npm publishing automation
-  - Pre-release test job with full test suite
-  - Version tag validation against package.json
-  - npm provenance for supply chain security
-  - Dry-run support for testing releases
-  - Automated changelog generation for releases
-
-### Changed
-
-- **Version bump** to 1.2.0
-- **Research Citations** - Corrected 322% privilege escalation source to Apiiro (was incorrectly attributed to Veracode)
-- **Security Review Command** - Updated citation for privilege escalation statistic
-- **VitePress Navigation** - Added "When AI Helps" to guides dropdown and sidebar
-
-### Fixed
-
-- Citation accuracy for privilege escalation statistic (Apiiro, not Veracode)
-- Java AI code failure rate corrected to 72% (was 70%+)
-
-## [1.1.0] - 2024-12-30
-
-### Added
-
-#### Documentation
-
-- **IDE Integration Guide** (`docs/IDE-INTEGRATION.md`) - Complete setup for VS Code, Cursor, JetBrains, Neovim, Emacs
-- **SAST Integration Guide** (`docs/SAST-INTEGRATION.md`) - Semgrep, CodeQL, Bandit setup with custom AI-code rules
-- **Metrics Visualization Guide** (`docs/METRICS-VISUALIZATION.md`) - Dashboard setup for Grafana, terminal, HTML reports
-- **Team Memory Federation Guide** (`docs/TEAM-MEMORY-FEDERATION.md`) - Multi-developer memory sharing patterns
-
-#### CLI Enhancements
-
-- **Structured Error System** (`src/errors.js`) - 40+ error codes with categories, suggestions, and documentation links
-- **TypeScript Definitions** (`types/index.d.ts`) - Full type definitions for programmatic usage
-- Error codes follow pattern `AIX-{CATEGORY}-{NUMBER}` for easy tracking
-- Exit codes aligned with Unix conventions and sysexits.h
-
-#### CI/CD Improvements
-
-- **CodeQL Analysis** - Security scanning with extended queries
-- **Semgrep Integration** - OWASP Top 10 and secrets detection
-- **Coverage Thresholds** - 70% Node.js, 60% Python minimum coverage enforcement
-- **Documentation Build** - Automated VitePress builds with artifact upload
-- **Shellcheck** - Linting for all shell scripts
-- **Package Verification** - Slopsquatting detection in CI
-
-#### Configuration
-
-- Updated VitePress configuration with all new documentation pages
-- Sitemap generation for SEO
-- Enhanced meta tags for social sharing
-
-### Changed
-
-- **Version bump** to 1.1.0
-- **Package exports** now include error system and types
-- **src/index.js** exports `COMMANDS`, `AGENTS`, `PRESET_CONFIGS`, and utility functions
-- Enhanced preset configurations with metrics and federation options
-- VitePress navigation updated with Guides dropdown
-
-### Fixed
-
-- CI pipeline now fails on critical validation errors (was continue-on-error)
-- Proper exit codes for CLI commands based on error type
-
-## [1.0.0] - 2024-12-30
-
-### Added
-
-#### Core Documentation
-
-- `ai-development-friction.md` - 59 friction points across 17 categories, written from AI perspective
-- `ai-friction-mitigations.md` - 40+ evidence-based mitigation strategies with research citations
-- `ai-friction-implementation.md` - Complete implementation blueprints with copy-paste code
-- `ai-friction-action-plan.md` - Strategic roadmap for framework adoption
 
 #### CLI Tool
 
-- `npx ai-excellence-framework init` - Interactive project initialization
-- `npx ai-excellence-framework validate` - Configuration validation against schemas
-- `npx ai-excellence-framework doctor` - Environment health diagnostics
-- `npx ai-excellence-framework update` - Framework update checker
-- Four configuration presets: minimal, standard, full, team
+- **8 commands** for framework management:
+  - `init` - Interactive project initialization with 4 presets (minimal, standard, full, team)
+  - `validate` - Configuration validation with auto-fix support
+  - `doctor` - Environment health diagnostics with MCP checks
+  - `update` - Framework update checker
+  - `generate` - Multi-tool configuration generator
+  - `lint` - Configuration file linting
+  - `uninstall` - Clean framework removal
+  - `detect` - Scan for configured AI tools
+- JSON output mode for all commands (scriptable)
+- Structured error system with 40+ error codes
+- Full TypeScript type definitions
+
+#### AI Tool Support (25 tools)
+
+Universal configuration generation for:
+
+| Tool | Configuration |
+|------|---------------|
+| Claude Code | `CLAUDE.md`, `.claude/` |
+| Cursor IDE | `.cursor/`, `.cursorrules` |
+| GitHub Copilot | `.github/copilot-instructions.md` |
+| Windsurf IDE | `.windsurf/`, `.windsurfrules` |
+| Aider CLI | `.aider.conf.yml` |
+| AGENTS.md (AAIF) | `AGENTS.md` |
+| Google Gemini CLI | `GEMINI.md` |
+| OpenAI Codex | `.codex/` |
+| Zed Editor | `.zed/`, `.rules` |
+| Sourcegraph Amp | `.amp/`, `amp.toml` |
+| Roo Code | `.roo/rules/` |
+| JetBrains Junie | `.junie/guidelines.md` |
+| Cline AI | `.cline/`, `.clinerules` |
+| Block Goose | `.goose/` |
+| Kiro CLI | `.kiro/` |
+| Continue.dev | `.continue/` |
+| Augment Code | `.augment/` |
+| Qodo AI | `qodo.toml` |
+| OpenCode AI | `opencode.json`, `.opencode/` |
+| Zencoder | `.zencoder/` |
+| Tabnine | `.tabnine/guidelines/` |
+| Amazon Q Developer | `.amazonq/rules/` |
+| Agent Skills | `.github/skills/` |
+| Claude Plugins | `.claude-plugin/` |
 
 #### Slash Commands (8 total)
 
@@ -670,45 +99,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Security Features
 
-- Pre-commit hooks for secrets detection (Yelp detect-secrets)
-- Dependency verification to prevent slopsquatting
+- Pre-commit hooks for secrets detection
+- Dependency verification (slopsquatting prevention)
 - CLAUDE.md validation hook
 - Critical TODO detection
 - OWASP Top 10 aligned security review
-- MCP Security documentation
+- Language-specific security patterns (Python, Go, Rust, JavaScript)
 
 #### Git Hooks
 
 - `post-edit.sh` - Auto-format after file edits
-- `verify-deps.sh` - Validate dependencies exist (slopsquatting prevention)
+- `verify-deps.sh` - Validate dependencies exist
 - `check-todos.sh` - Detect blocking TODOs
 - `check-claude-md.sh` - Validate CLAUDE.md structure
+- `check-ai-security.sh` - AI code security scanning
 
-#### Templates & Presets
+#### Shell Completions
 
-- Minimal preset - CLAUDE.md + plan + verify only
-- Standard preset - Recommended for individual developers
-- Full preset - Complete feature set with MCP and metrics
-- Team preset - Collaboration features and shared memory
+- Bash completion (`completions/ai-excellence.bash`)
+- Zsh completion (`completions/ai-excellence.zsh`)
+- Fish completion (`completions/ai-excellence.fish`)
 
-#### Testing
+#### Documentation
 
-- CLI unit tests using Node.js native test runner
-- Integration tests for complete workflows
-- Command tests for CLI functionality
-- MCP server tests using pytest
-- Performance benchmarks for MCP server
-- Shell script validation tests
-- Security pattern detection tests
+- **Core Guides**:
+  - Getting Started
+  - Quick Reference
+  - Troubleshooting
+  - API Documentation
+  - Migration Guide
 
-#### CI/CD
+- **Integration Guides**:
+  - IDE Integration (VS Code, Cursor, JetBrains, Neovim)
+  - SAST Integration (Semgrep, CodeQL, Bandit)
+  - Metrics Visualization (Grafana, terminal, HTML)
 
-- GitHub Actions workflow for testing
+- **Advanced Topics**:
+  - MCP Security
+  - MCP OAuth
+  - MCP Tasks
+  - MCP Registry
+  - Team Memory Federation
+  - Model Selection
+  - Claude Agent SDK
+  - AAIF (Agentic AI Foundation)
+  - Enterprise Deployment
+
+- **Research**:
+  - When AI Helps (productivity research)
+  - Benchmarks
+  - Research Citations
+
+- **VitePress Site**: Full documentation site with search, navigation, and versioning
+
+#### Testing Infrastructure
+
+- Node.js native test runner
+- Unit tests for CLI commands
+- Integration tests for workflows
+- E2E tests for real CLI invocation
+- Edge case tests for boundary conditions
+- MCP server tests (pytest)
+- Shell script tests
+- 70% Node.js / 60% Python coverage thresholds
+
+#### CI/CD Pipeline
+
 - Multi-Node.js version matrix (18.x, 20.x, 22.x)
 - Multi-Python version matrix (3.9-3.12)
-- Pre-commit hook validation
-- Release automation workflow
-- VitePress documentation site configuration
+- ESLint and Prettier enforcement
+- ShellCheck for shell scripts
+- CodeQL security scanning
+- Semgrep OWASP rules
+- SBOM generation (CycloneDX)
+- Vulnerability scanning (OSV-Scanner)
+- npm audit integration
+- VitePress documentation builds
+
+#### Programmatic API
+
+Full programmatic access via ES modules:
+
+```javascript
+import {
+  initCommand,
+  validateCommand,
+  doctorCommand,
+  generateCommand,
+  lintCommand,
+  uninstall,
+  detectCommand,
+  detectTools,
+  VERSION,
+  SUPPORTED_TOOLS,
+  PRESETS,
+  // ... and more
+} from 'ai-excellence-framework';
+```
 
 ### Research Validation
 
@@ -719,14 +206,8 @@ All statistics and claims verified against authoritative sources:
 - OWASP Gen AI Security Project
 - Slopsquatting research (University of Texas, Virginia Tech, Oklahoma)
 - Anthropic Claude Code Best Practices
-
-## [0.1.0] - 2024-12-29
-
-### Added
-
-- Initial project structure
-- Core documentation drafts
-- Basic CLAUDE.md template
+- 2025 DORA Report
+- Agentic AI Foundation (AAIF) standards
 
 ---
 
@@ -741,12 +222,11 @@ This project follows [Semantic Versioning](https://semver.org/):
   - CLI command signatures
 
 - **MINOR** version for backwards-compatible additions:
+  - New AI tool generators
   - New slash commands
   - New subagents
   - New hooks
-  - New presets
   - Enhanced documentation
-  - New utility exports
 
 - **PATCH** version for backwards-compatible fixes:
   - Bug fixes
@@ -754,38 +234,5 @@ This project follows [Semantic Versioning](https://semver.org/):
   - Security patches
   - Performance improvements
 
-## Migration Guides
-
-### Upgrading from 1.0 to 1.1
-
-1. **New Exports Available**: The framework now exports error handling utilities:
-
-   ```javascript
-   import { createError, FrameworkError, EXIT_CODES } from 'ai-excellence-framework';
-   ```
-
-2. **TypeScript Support**: Full type definitions available:
-
-   ```typescript
-   import type { InitOptions, ValidateResult } from 'ai-excellence-framework';
-   ```
-
-3. **CI Updates**: Consider adding the new security scanning workflows from `docs/SAST-INTEGRATION.md`
-
-4. **IDE Configuration**: See `docs/IDE-INTEGRATION.md` for recommended workspace settings
-
-### Upgrading from 0.x to 1.0
-
-1. **CLAUDE.md Changes**: The required sections have been standardized. Run `npx ai-excellence-framework validate` to check compliance.
-
-2. **Command Updates**: All slash commands now use the standardized output format. Existing custom commands will continue to work.
-
-3. **MCP Server**: If you were using a custom memory server, the new server is backwards-compatible but adds new features.
-
-[Unreleased]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.4.0...HEAD
-[1.4.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.3.0...v1.4.0
-[1.3.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v0.1.0...v1.0.0
-[0.1.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ai-excellence-framework/ai-excellence-framework/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ai-excellence-framework/ai-excellence-framework/releases/tag/v1.0.0

@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
 
 # Development files
 .git/
@@ -10,27 +11,70 @@ tests/
 *.test.js
 *.test.sh
 *.test.py
+pytest.ini
 
 # IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Documentation build
+# Documentation build and VitePress
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+docs/.vitepress/.temp/
 
-# Temporary files
+# Temporary and working files
 .tmp/
 *.log
+npm-debug.log*
+
+# Local configuration (should not be published)
+.claude/settings.local.json
+CLAUDE.local.md
+*.local.md
+*.local.json
 
 # Development configs
 .eslintrc.*
 eslint.config.js
 .prettierrc*
 .pre-commit-config.yaml
+.editorconfig
 
-# Coverage
+# Coverage and testing
 coverage/
 .nyc_output/
+.coverage
+
+# Secrets and environment
+.env
+.env.*
+*.pem
+*.key
+.secrets.baseline
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Session notes (development artifacts)
+docs/session-notes/*.md
+!docs/session-notes/README.md
+!docs/session-notes/index.md
+
+# Core documents (shipped separately in docs/)
+ai-development-friction.md
+ai-friction-mitigations.md
+ai-friction-implementation.md
+ai-friction-action-plan.md
+
+# Build artifacts
+dist/
+build/
+*.tgz
+
+# Benchmarks and performance tests
+benchmarks/
+*.bench.js

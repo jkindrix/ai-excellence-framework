@@ -460,15 +460,15 @@ Releases are managed by maintainers following semantic versioning:
 Update `CHANGELOG.md` for user-facing changes:
 
 ```markdown
-## [1.3.0] - 2025-01-15
+## [X.Y.Z] - YYYY-MM-DD
 
 ### Added
 
-- New `/refactor` command for safe refactoring (#123)
+- New feature description (#123)
 
 ### Fixed
 
-- CLI crash when CLAUDE.md is missing (#124)
+- Bug fix description (#124)
 
 ### Changed
 

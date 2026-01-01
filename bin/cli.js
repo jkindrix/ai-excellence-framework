@@ -10,6 +10,9 @@
  *   npx ai-excellence-framework validate
  *   npx ai-excellence-framework update
  *   npx ai-excellence-framework doctor
+ *   npx ai-excellence-framework generate
+ *   npx ai-excellence-framework lint
+ *   npx ai-excellence-framework uninstall
  */
 
 import { Command } from 'commander';
@@ -25,6 +28,8 @@ import { updateCommand } from '../src/commands/update.js';
 import { doctorCommand } from '../src/commands/doctor.js';
 import { generateCommand, SUPPORTED_TOOLS } from '../src/commands/generate.js';
 import { lintCommand } from '../src/commands/lint.js';
+import { uninstall } from '../src/commands/uninstall.js';
+import { detectCommand } from '../src/commands/detect.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -60,6 +65,7 @@ program
   .command('validate')
   .description('Validate your AI Excellence Framework configuration')
   .option('--fix', 'Attempt to fix issues automatically', false)
+  .option('--json', 'Output results as JSON', false)
   .action(validateCommand);
 
 // Update command
@@ -75,6 +81,7 @@ program
   .command('doctor')
   .description('Diagnose common issues and verify setup')
   .option('--verbose', 'Show detailed diagnostic information', false)
+  .option('--json', 'Output results as JSON', false)
   .action(doctorCommand);
 
 // Generate command (multi-tool support)
@@ -85,6 +92,7 @@ program
   .option('-t, --tools <tools>', `Tools to generate for: ${SUPPORTED_TOOLS.join(', ')}`, 'all')
   .option('-f, --force', 'Overwrite existing files', false)
   .option('--dry-run', 'Show what would be created without making changes', false)
+  .option('--json', 'Output results as JSON', false)
   .action(generateCommand);
 
 // Lint command (configuration validation)
@@ -95,6 +103,24 @@ program
   .option('--only <files>', 'Only check specific files (comma-separated)', '')
   .option('--ignore-errors', 'Exit 0 even with errors', false)
   .action(lintCommand);
+
+// Uninstall command
+program
+  .command('uninstall')
+  .description('Remove AI Excellence Framework files from your project')
+  .option('--dry-run', 'Show what would be removed without making changes', false)
+  .option('-f, --force', 'Skip confirmation prompt', false)
+  .option('--keep-config', 'Preserve CLAUDE.md file', false)
+  .option('--json', 'Output results as JSON', false)
+  .action(uninstall);
+
+// Detect command
+program
+  .command('detect')
+  .description('Detect which AI coding tools are configured in this project')
+  .option('--verbose', 'Show detailed information including unconfigured tools', false)
+  .option('--json', 'Output results as JSON', false)
+  .action(detectCommand);
 
 // Error handling
 program.exitOverride(err => {

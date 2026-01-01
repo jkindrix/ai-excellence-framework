@@ -41,6 +41,8 @@ export { updateCommand } from './commands/update.js';
 export { doctorCommand } from './commands/doctor.js';
 export { generateCommand, SUPPORTED_TOOLS } from './commands/generate.js';
 export { lintCommand } from './commands/lint.js';
+export { uninstall } from './commands/uninstall.js';
+export { detectCommand, detectTools } from './commands/detect.js';
 
 // ============================================
 // Error System Exports
@@ -64,7 +66,7 @@ export {
  * Framework version (semver)
  * @constant {string}
  */
-export const VERSION = '1.5.0';
+export const VERSION = '1.0.0';
 
 /**
  * Available presets for initialization

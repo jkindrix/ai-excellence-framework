@@ -358,7 +358,7 @@ sqlite3 ~/.claude/project-memories/project.db "
 
 **Solutions:**
 
-1. **Enable WAL mode** (already default in v1.4.0+)
+1. **Enable WAL mode** (enabled by default)
 
    ```python
    conn.execute("PRAGMA journal_mode=WAL")

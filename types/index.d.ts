@@ -236,6 +236,24 @@ export type SupportedTool =
   | 'windsurf'
   | 'aider'
   | 'claude'
+  | 'gemini'
+  | 'codex'
+  | 'zed'
+  | 'amp'
+  | 'roo'
+  | 'junie'
+  | 'cline'
+  | 'goose'
+  | 'kiro'
+  | 'continue'
+  | 'augment'
+  | 'qodo'
+  | 'opencode'
+  | 'zencoder'
+  | 'tabnine'
+  | 'amazonq'
+  | 'plugins'
+  | 'skills'
   | 'all';
 
 /**
@@ -460,6 +478,87 @@ export function doctorCommand(options?: DoctorOptions): Promise<DoctorResult>;
  * @returns Promise resolving to success status
  */
 export function updateCommand(options?: UpdateOptions): Promise<boolean>;
+
+/**
+ * Generate configurations for AI coding tools
+ * @param options - Generate options
+ * @returns Promise resolving when generation is complete
+ */
+export function generateCommand(options?: GenerateOptions): Promise<void>;
+
+/**
+ * Lint framework configuration files
+ * @param options - Lint options
+ * @returns Promise resolving to lint results
+ */
+export function lintCommand(options?: LintOptions): Promise<LintResults>;
+
+/**
+ * Options for the uninstall command
+ */
+export interface UninstallOptions {
+  /** Force removal without confirmation */
+  force?: boolean;
+
+  /** Keep configuration files */
+  keepConfig?: boolean;
+
+  /** Preview removal without executing */
+  dryRun?: boolean;
+}
+
+/**
+ * Uninstall framework from project
+ * @param options - Uninstall options
+ * @returns Promise resolving when uninstall is complete
+ */
+export function uninstall(options?: UninstallOptions): Promise<void>;
+
+/**
+ * Options for the detect command
+ */
+export interface DetectOptions {
+  /** Directory to scan */
+  targetDir?: string;
+
+  /** Show detailed information */
+  verbose?: boolean;
+
+  /** Output as JSON */
+  json?: boolean;
+}
+
+/**
+ * Result of tool detection
+ */
+export interface DetectResult {
+  /** Detected tools */
+  detected: Array<{
+    id: string;
+    name: string;
+    foundFiles: string[];
+  }>;
+
+  /** Tools not detected */
+  notDetected: Array<{
+    id: string;
+    name: string;
+  }>;
+}
+
+/**
+ * Detect configured AI tools in a directory
+ * @param cwd - Directory to scan
+ * @returns Detection result
+ */
+export function detectTools(cwd: string): DetectResult;
+
+/**
+ * Detect command handler
+ * @param options - Detect options
+ * @returns Promise resolving when detection is complete
+ */
+export function detectCommand(options?: DetectOptions): Promise<void>;
 
 // ============================================
 // Error Types

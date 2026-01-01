@@ -406,14 +406,17 @@ Thumbs.db
 export async function validateCommand(options) {
   const cwd = process.cwd();
   const autoFix = options.fix || false;
+  const json = options.json || false;
 
-  console.log(chalk.cyan('\n  AI Excellence Framework Validator\n'));
+  if (!json) {
+    console.log(chalk.cyan('\n  AI Excellence Framework Validator\n'));
 
-  if (autoFix) {
-    console.log(chalk.yellow('  Auto-fix mode enabled\n'));
+    if (autoFix) {
+      console.log(chalk.yellow('  Auto-fix mode enabled\n'));
+    }
   }
 
-  const spinner = ora('Running validation checks...').start();
+  const spinner = json ? null : ora('Running validation checks...').start();
 
   const results = {
     passed: [],
@@ -429,7 +432,9 @@ export async function validateCommand(options) {
       let passed = await rule.check(cwd);
 
       if (!passed && autoFix && rule.fix) {
-        spinner.text = `Fixing: ${rule.name}...`;
+        if (spinner) {
+          spinner.text = `Fixing: ${rule.name}...`;
+        }
         try {
           const fixed = await rule.fix(cwd);
           if (fixed) {
@@ -469,7 +474,27 @@ export async function validateCommand(options) {
     }
   }
 
-  spinner.stop();
+  if (spinner) {
+    spinner.stop();
+  }
+
+  // JSON output
+  if (json) {
+    const jsonOutput = {
+      valid: results.errors.length === 0,
+      passed: results.passed.length,
+      total: VALIDATION_RULES.length,
+      errors: results.errors.map(r => ({ id: r.id, name: r.name, category: r.category, fixable: !!r.fix })),
+      warnings: results.warnings.map(r => ({ id: r.id, name: r.name, category: r.category, fixable: !!r.fix })),
+      info: results.info.map(r => ({ id: r.id, name: r.name, category: r.category, fixable: !!r.fix })),
+      fixed: results.fixed.map(r => ({ id: r.id, name: r.name, category: r.category }))
+    };
+    console.log(JSON.stringify(jsonOutput, null, 2));
+    if (results.errors.length > 0) {
+      process.exit(1);
+    }
+    return;
+  }
 
   // Print results
   printValidationResults(results, autoFix);

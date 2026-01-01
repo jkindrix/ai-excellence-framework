@@ -34,7 +34,7 @@ describe('generate command', () => {
     assert.ok(SUPPORTED_TOOLS.includes('aider'), 'Should support Aider');
     assert.ok(SUPPORTED_TOOLS.includes('claude'), 'Should support Claude');
 
-    // Additional tools (v1.7.0+)
+    // Additional tools
     assert.ok(SUPPORTED_TOOLS.includes('gemini'), 'Should support Gemini CLI');
     assert.ok(SUPPORTED_TOOLS.includes('codex'), 'Should support OpenAI Codex');
     assert.ok(SUPPORTED_TOOLS.includes('zed'), 'Should support Zed Editor');
@@ -414,7 +414,7 @@ Test.
   });
 });
 
-describe('new tool generators (v1.7.0+)', () => {
+describe('extended tool generators', () => {
   test('generates Skills (SKILL.md) in .github/skills/', async () => {
     writeFileSync(
       join(testDir, 'CLAUDE.md'),
@@ -594,8 +594,8 @@ describe('new tool generators (v1.7.0+)', () => {
   });
 });
 
-describe('new tool generators (v1.8.0+)', () => {
-  test('SUPPORTED_TOOLS includes v1.8.0 tools', async () => {
+describe('plugin and platform generators', () => {
+  test('SUPPORTED_TOOLS includes plugin and platform tools', async () => {
     const { SUPPORTED_TOOLS } = await import('../src/commands/generate.js');
 
     assert.ok(SUPPORTED_TOOLS.includes('plugins'), 'Should support Claude Code Plugins');
@@ -604,7 +604,7 @@ describe('new tool generators (v1.8.0+)', () => {
     assert.ok(SUPPORTED_TOOLS.includes('augment'), 'Should support Augment Code');
     assert.ok(SUPPORTED_TOOLS.includes('qodo'), 'Should support Qodo AI');
 
-    // v1.8.0 tools are present (count verified in v1.9.0 tests)
+    // Plugin and platform tools are present
     assert.ok(SUPPORTED_TOOLS.includes('all'), 'Should support all');
   });
 
@@ -841,16 +841,18 @@ describe('new tool generators (v1.8.0+)', () => {
   });
 });
 
-describe('new tool generators (v1.9.0+)', () => {
-  test('SUPPORTED_TOOLS includes v1.9.0 tools', async () => {
+describe('additional tool generators', () => {
+  test('SUPPORTED_TOOLS includes all additional tools', async () => {
     const { SUPPORTED_TOOLS } = await import('../src/commands/generate.js');
 
-    // v1.9.0 new tools
+    // Additional tools
     assert.ok(SUPPORTED_TOOLS.includes('opencode'), 'Should support OpenCode AI');
     assert.ok(SUPPORTED_TOOLS.includes('zencoder'), 'Should support Zencoder');
+    assert.ok(SUPPORTED_TOOLS.includes('tabnine'), 'Should support Tabnine');
+    assert.ok(SUPPORTED_TOOLS.includes('amazonq'), 'Should support Amazon Q Developer');
 
-    // Total count check (22 tools + 'all' = 23)
-    assert.strictEqual(SUPPORTED_TOOLS.length, 23, 'Should have 23 entries (22 tools + all)');
+    // Total count check (24 tools + 'all' = 25)
+    assert.strictEqual(SUPPORTED_TOOLS.length, 25, 'Should have 25 entries (24 tools + all)');
   });
 
   test('generates OpenCode AI configuration', async () => {
@@ -965,7 +967,7 @@ describe('new tool generators (v1.9.0+)', () => {
     }
   });
 
-  test('generates all tools including v1.9.0 additions', async () => {
+  test('generates all tools', async () => {
     writeFileSync(
       join(testDir, 'CLAUDE.md'),
       '# Project\n\n## Overview\n\nTest\n\n## Tech Stack\n\n- TypeScript\n- Node.js'
@@ -990,6 +992,103 @@ describe('new tool generators (v1.9.0+)', () => {
         existsSync(join(testDir, '.zencoder', 'zencoder.json')),
         '.zencoder/zencoder.json should exist'
       );
+    } finally {
+      process.chdir(originalCwd);
+      process.exit = originalExit;
+      console.log = originalLog;
+    }
+  });
+
+  test('generates Tabnine configuration', async () => {
+    writeFileSync(
+      join(testDir, 'CLAUDE.md'),
+      '# Project\n\n## Overview\n\nTest project\n\n## Tech Stack\n\n- Python'
+    );
+
+    const { generateCommand } = await import('../src/commands/generate.js');
+
+    const originalCwd = process.cwd();
+    const originalExit = process.exit;
+    const originalLog = console.log;
+
+    try {
+      process.chdir(testDir);
+      process.exit = () => {};
+      console.log = () => {};
+
+      await generateCommand({ tools: 'tabnine', force: true });
+
+      // Check guidelines directory
+      const guidelinesDir = join(testDir, '.tabnine', 'guidelines');
+      assert.ok(existsSync(guidelinesDir), '.tabnine/guidelines should be created');
+
+      // Check project.md
+      const projectPath = join(guidelinesDir, 'project.md');
+      assert.ok(existsSync(projectPath), '.tabnine/guidelines/project.md should be created');
+
+      const projectContent = readFileSync(projectPath, 'utf-8');
+      assert.ok(projectContent.includes('Project Guidelines'), 'Should have project guidelines header');
+      assert.ok(projectContent.includes('Tabnine'), 'Should reference Tabnine');
+
+      // Check coding-standards.md
+      const codingPath = join(guidelinesDir, 'coding-standards.md');
+      assert.ok(existsSync(codingPath), '.tabnine/guidelines/coding-standards.md should be created');
+
+      // Check security.md
+      const securityPath = join(guidelinesDir, 'security.md');
+      assert.ok(existsSync(securityPath), '.tabnine/guidelines/security.md should be created');
+
+      const securityContent = readFileSync(securityPath, 'utf-8');
+      assert.ok(securityContent.includes('Security Guidelines'), 'Should have security header');
+    } finally {
+      process.chdir(originalCwd);
+      process.exit = originalExit;
+      console.log = originalLog;
+    }
+  });
+
+  test('generates Amazon Q Developer configuration', async () => {
+    writeFileSync(
+      join(testDir, 'CLAUDE.md'),
+      '# Project\n\n## Overview\n\nTest project\n\n## Tech Stack\n\n- Java'
+    );
+
+    const { generateCommand } = await import('../src/commands/generate.js');
+
+    const originalCwd = process.cwd();
+    const originalExit = process.exit;
+    const originalLog = console.log;
+
+    try {
+      process.chdir(testDir);
+      process.exit = () => {};
+      console.log = () => {};
+
+      await generateCommand({ tools: 'amazonq', force: true });
+
+      // Check rules directory
+      const rulesDir = join(testDir, '.amazonq', 'rules');
+      assert.ok(existsSync(rulesDir), '.amazonq/rules should be created');
+
+      // Check project-rules.md
+      const projectPath = join(rulesDir, 'project-rules.md');
+      assert.ok(existsSync(projectPath), '.amazonq/rules/project-rules.md should be created');
+
+      const projectContent = readFileSync(projectPath, 'utf-8');
+      assert.ok(projectContent.includes('Amazon Q Developer'), 'Should reference Amazon Q Developer');
+      assert.ok(projectContent.includes('Project Rules'), 'Should have project rules header');
+
+      // Check coding-rules.md
+      const codingPath = join(rulesDir, 'coding-rules.md');
+      assert.ok(existsSync(codingPath), '.amazonq/rules/coding-rules.md should be created');
+
+      // Check security-rules.md
+      const securityPath = join(rulesDir, 'security-rules.md');
+      assert.ok(existsSync(securityPath), '.amazonq/rules/security-rules.md should be created');
+
+      const securityContent = readFileSync(securityPath, 'utf-8');
+      assert.ok(securityContent.includes('AWS-Specific Security'), 'Should have AWS security section');
+      assert.ok(securityContent.includes('IAM'), 'Should mention IAM');
     } finally {
       process.chdir(originalCwd);
       process.exit = originalExit;

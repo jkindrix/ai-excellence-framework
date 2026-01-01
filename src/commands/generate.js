@@ -11,13 +11,15 @@
  * - Aider configuration (.aider.conf.yml)
  * - JetBrains Junie (.junie/guidelines.md)
  * - Cline (.clinerules)
- * - Block Goose (AGENTS.md + MCP)
+ * - Block Goose (AGENTS.md + MCP extensions)
  * - Kiro CLI (~/.kiro/ - AWS Q Developer successor)
  * - Continue.dev (config.yaml, .continue/rules/)
  * - Augment Code (augment rules)
  * - Qodo AI (TOML config)
  * - OpenCode AI (opencode.json, markdown agents)
  * - Zencoder (Zen Rules - .zencoder/rules/*.md)
+ * - Tabnine (.tabnine/guidelines/)
+ * - Amazon Q Developer (.amazonq/rules/)
  *
  * This enables the framework to work across all major AI coding assistants.
  *
@@ -33,6 +35,8 @@
  * @see https://block.github.io/goose/ - Block Goose
  * @see https://opencode.ai - OpenCode AI
  * @see https://zencoder.ai - Zencoder
+ * @see https://www.tabnine.com - Tabnine
+ * @see https://docs.aws.amazon.com/amazonq - Amazon Q Developer
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
@@ -73,6 +77,8 @@ export const SUPPORTED_TOOLS = [
   'qodo', // Qodo AI (TOML config, best_practices.md)
   'opencode', // OpenCode AI (opencode.json, markdown agents)
   'zencoder', // Zencoder (Zen Rules - .zencoder/rules/*.md)
+  'tabnine', // Tabnine (.tabnine/guidelines/)
+  'amazonq', // Amazon Q Developer (.amazonq/rules/)
   'all' // Generate all formats
 ];
 
@@ -195,6 +201,12 @@ export async function generateCommand(options) {
             break;
           case 'zencoder':
             await generateZencoderConfig(cwd, projectContext, options, results);
+            break;
+          case 'tabnine':
+            await generateTabnineConfig(cwd, projectContext, options, results);
+            break;
+          case 'amazonq':
+            await generateAmazonQConfig(cwd, projectContext, options, results);
             break;
           default:
             results.errors.push(`Unknown tool: ${tool}`);
@@ -3073,6 +3085,405 @@ function generateZencoderJson(context) {
 }
 
 /**
+ * Generate Tabnine configuration
+ * @see https://www.tabnine.com/getting-started
+ * Tabnine uses .tabnine/guidelines/ directory with markdown files
+ */
+async function generateTabnineConfig(cwd, context, options, results) {
+  const guidelinesDir = join(cwd, '.tabnine', 'guidelines');
+
+  if (!existsSync(guidelinesDir)) {
+    if (!options.dryRun) {
+      mkdirSync(guidelinesDir, { recursive: true });
+    }
+    results.created.push('.tabnine/guidelines/');
+  }
+
+  // Generate main guidelines file
+  const mainPath = join(guidelinesDir, 'project.md');
+  if (!existsSync(mainPath) || options.force) {
+    const content = generateTabnineProjectGuidelines(context);
+    if (!options.dryRun) {
+      writeFileSync(mainPath, content);
+    }
+    results.created.push('.tabnine/guidelines/project.md');
+  } else {
+    results.skipped.push('.tabnine/guidelines/project.md (exists)');
+  }
+
+  // Generate coding standards file
+  const codingPath = join(guidelinesDir, 'coding-standards.md');
+  if (!existsSync(codingPath) || options.force) {
+    const content = generateTabnineCodingStandards(context);
+    if (!options.dryRun) {
+      writeFileSync(codingPath, content);
+    }
+    results.created.push('.tabnine/guidelines/coding-standards.md');
+  } else {
+    results.skipped.push('.tabnine/guidelines/coding-standards.md (exists)');
+  }
+
+  // Generate security guidelines file
+  const securityPath = join(guidelinesDir, 'security.md');
+  if (!existsSync(securityPath) || options.force) {
+    const content = generateTabnineSecurityGuidelines(context);
+    if (!options.dryRun) {
+      writeFileSync(securityPath, content);
+    }
+    results.created.push('.tabnine/guidelines/security.md');
+  } else {
+    results.skipped.push('.tabnine/guidelines/security.md (exists)');
+  }
+}
+
+function generateTabnineProjectGuidelines(context) {
+  const projectName = context?.projectName || basename(process.cwd());
+
+  return `# Project Guidelines: ${projectName}
+
+> Tabnine AI guidelines for this project.
+> See: https://www.tabnine.com/getting-started
+
+## Project Overview
+
+${context?.overview || 'Project configured with AI Excellence Framework.'}
+
+## Tech Stack
+
+${context?.techStack?.map(t => `- **${t.category}**: ${t.value}`).join('\n') || '- See package.json for dependencies'}
+
+## Architecture
+
+${context?.architecture || 'Follow existing patterns in the codebase.'}
+
+## Commands
+
+\`\`\`bash
+npm install    # Install dependencies
+npm test       # Run tests
+npm run build  # Build project
+npm run lint   # Check code style
+\`\`\`
+
+## Current State
+
+${context?.currentState || 'Refer to CLAUDE.md or README.md for current project status.'}
+
+## Conventions
+
+${
+  context?.conventions ||
+  `- Follow existing code patterns in the repository
+- Use consistent naming conventions
+- Write self-documenting code
+- Add tests for new functionality
+- Use conventional commits (feat, fix, docs, refactor, test)`
+}
+`;
+}
+
+function generateTabnineCodingStandards(context) {
+  return `# Coding Standards
+
+> Standards for code generation in this project.
+
+## Naming Conventions
+
+- Use descriptive, meaningful names
+- camelCase for variables and functions
+- PascalCase for classes and types
+- SCREAMING_SNAKE_CASE for constants
+- kebab-case for file names
+
+## Code Style
+
+${
+  context?.conventions ||
+  `- Use modern JavaScript/TypeScript features
+- Prefer const over let, avoid var
+- Use async/await over callbacks
+- Keep functions focused and small
+- Add JSDoc comments for public APIs`
+}
+
+## Error Handling
+
+- Always handle errors explicitly
+- Use try-catch for async operations
+- Provide meaningful error messages
+- Never silently swallow errors
+
+## Testing
+
+- Write tests for new functionality
+- Follow Arrange-Act-Assert pattern
+- Use descriptive test names
+- Aim for 80%+ coverage on critical paths
+
+## Documentation
+
+- Add comments for complex logic
+- Keep README.md up to date
+- Document API changes
+`;
+}
+
+function generateTabnineSecurityGuidelines(_context) {
+  return `# Security Guidelines
+
+> Security requirements for generated code.
+
+## Input Validation
+
+- Validate all user inputs
+- Use parameterized queries for databases
+- Sanitize HTML output to prevent XSS
+- Validate file paths to prevent traversal
+
+## Secrets Management
+
+- Never hardcode secrets or credentials
+- Never log sensitive data
+- Use environment variables for configuration
+- Never commit .env files
+
+## Dependencies
+
+- Verify packages exist before adding
+- Check for known vulnerabilities
+- Prefer well-maintained libraries
+- Keep dependencies updated
+
+## Error Handling
+
+- Don't expose internal details in errors
+- Log errors securely (no sensitive data)
+- Return generic error messages to users
+
+## Access Control
+
+- Implement proper authentication
+- Use role-based access control
+- Validate permissions on every request
+`;
+}
+
+/**
+ * Generate Amazon Q Developer configuration
+ * @see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/
+ * Amazon Q uses .amazonq/rules/ directory with markdown files
+ */
+async function generateAmazonQConfig(cwd, context, options, results) {
+  const rulesDir = join(cwd, '.amazonq', 'rules');
+
+  if (!existsSync(rulesDir)) {
+    if (!options.dryRun) {
+      mkdirSync(rulesDir, { recursive: true });
+    }
+    results.created.push('.amazonq/rules/');
+  }
+
+  // Generate main rules file
+  const mainPath = join(rulesDir, 'project-rules.md');
+  if (!existsSync(mainPath) || options.force) {
+    const content = generateAmazonQProjectRules(context);
+    if (!options.dryRun) {
+      writeFileSync(mainPath, content);
+    }
+    results.created.push('.amazonq/rules/project-rules.md');
+  } else {
+    results.skipped.push('.amazonq/rules/project-rules.md (exists)');
+  }
+
+  // Generate coding rules file
+  const codingPath = join(rulesDir, 'coding-rules.md');
+  if (!existsSync(codingPath) || options.force) {
+    const content = generateAmazonQCodingRules(context);
+    if (!options.dryRun) {
+      writeFileSync(codingPath, content);
+    }
+    results.created.push('.amazonq/rules/coding-rules.md');
+  } else {
+    results.skipped.push('.amazonq/rules/coding-rules.md (exists)');
+  }
+
+  // Generate security rules file
+  const securityPath = join(rulesDir, 'security-rules.md');
+  if (!existsSync(securityPath) || options.force) {
+    const content = generateAmazonQSecurityRules(context);
+    if (!options.dryRun) {
+      writeFileSync(securityPath, content);
+    }
+    results.created.push('.amazonq/rules/security-rules.md');
+  } else {
+    results.skipped.push('.amazonq/rules/security-rules.md (exists)');
+  }
+}
+
+function generateAmazonQProjectRules(context) {
+  const projectName = context?.projectName || basename(process.cwd());
+
+  return `# Project Rules: ${projectName}
+
+> Amazon Q Developer rules for this project.
+> See: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/
+
+## Project Overview
+
+${context?.overview || 'Project configured with AI Excellence Framework.'}
+
+## Tech Stack
+
+${context?.techStack?.map(t => `- **${t.category}**: ${t.value}`).join('\n') || '- See package.json for dependencies'}
+
+## Architecture
+
+${context?.architecture || 'Follow existing patterns in the codebase.'}
+
+## Commands
+
+\`\`\`bash
+npm install    # Install dependencies
+npm test       # Run tests
+npm run build  # Build project
+npm run lint   # Check code style
+\`\`\`
+
+## Current State
+
+${context?.currentState || 'Refer to CLAUDE.md or README.md for current project status.'}
+
+## Development Workflow
+
+1. Create feature branch from main
+2. Make changes following project conventions
+3. Write tests for new functionality
+4. Run tests and linting
+5. Create pull request with descriptive title
+
+## Conventions
+
+${
+  context?.conventions ||
+  `- Follow existing code patterns in the repository
+- Use consistent naming conventions
+- Write self-documenting code
+- Add tests for new functionality
+- Use conventional commits (feat, fix, docs, refactor, test)`
+}
+`;
+}
+
+function generateAmazonQCodingRules(context) {
+  return `# Coding Rules
+
+> Code generation rules for Amazon Q Developer.
+
+## Naming Conventions
+
+- Use descriptive, meaningful names
+- camelCase for variables and functions
+- PascalCase for classes, types, and components
+- SCREAMING_SNAKE_CASE for constants
+- kebab-case for file names
+
+## Code Style
+
+${
+  context?.conventions ||
+  `- Use modern JavaScript/TypeScript features
+- Prefer const over let, avoid var
+- Use async/await over callbacks
+- Keep functions focused and small (< 50 lines)
+- Add JSDoc comments for public APIs`
+}
+
+## Error Handling
+
+- Always handle errors explicitly
+- Use try-catch for async operations
+- Provide meaningful error messages
+- Log errors with appropriate severity
+
+## Testing Requirements
+
+- Write unit tests for new functions
+- Write integration tests for APIs
+- Follow Arrange-Act-Assert pattern
+- Use descriptive test names
+
+## Documentation
+
+- Add JSDoc for public interfaces
+- Update README for new features
+- Document breaking changes
+- Include usage examples
+
+## Files to Avoid
+
+Never modify without explicit permission:
+- .env files (contain secrets)
+- Lock files (package-lock.json, yarn.lock)
+- Generated files in dist/ or build/
+- Database migration files
+`;
+}
+
+function generateAmazonQSecurityRules(_context) {
+  return `# Security Rules
+
+> Security requirements for code generated by Amazon Q Developer.
+
+## Input Validation
+
+- Validate all user inputs at boundaries
+- Use parameterized queries for databases
+- Sanitize HTML output to prevent XSS
+- Validate file paths to prevent directory traversal
+- Check content types for file uploads
+
+## Secrets Management
+
+- Never hardcode secrets, API keys, or credentials
+- Never log sensitive data (passwords, tokens, PII)
+- Use environment variables for configuration
+- Never commit .env files to version control
+- Rotate secrets regularly
+
+## Dependencies
+
+- Verify npm packages exist before adding
+- Check for known vulnerabilities (npm audit)
+- Prefer well-maintained, popular libraries
+- Review transitive dependencies
+- Keep dependencies up to date
+
+## AWS-Specific Security
+
+- Use IAM roles with least privilege
+- Enable CloudTrail logging
+- Encrypt data at rest and in transit
+- Use VPC for network isolation
+- Implement proper S3 bucket policies
+
+## Error Handling
+
+- Don't expose stack traces or internal details
+- Log errors securely (no credentials in logs)
+- Return generic error messages to users
+- Implement proper error boundaries
+
+## Authentication & Authorization
+
+- Use strong authentication mechanisms
+- Implement MFA where possible
+- Validate JWT tokens properly
+- Use role-based access control (RBAC)
+- Check permissions on every request
+`;
+}
+
+/**
  * Print generation results
  */
 function printResults(results, dryRun) {
@@ -3103,8 +3514,9 @@ function printResults(results, dryRun) {
     chalk.gray('  Gemini CLI, Codex CLI, Zed, Amp, Roo, Junie, Cline, Goose, Kiro,')
   );
   console.log(
-    chalk.gray('  Continue, Augment, Qodo, OpenCode, Zencoder, Skills, and Plugins (21 tools total)\n')
+    chalk.gray('  Continue, Augment, Qodo, OpenCode, Zencoder, Tabnine, Amazon Q,')
   );
+  console.log(chalk.gray('  Skills, and Plugins (23 tools total)\n'));
 }
 
 export default generateCommand;

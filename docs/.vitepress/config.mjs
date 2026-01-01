@@ -37,7 +37,7 @@ export default defineConfig({
         ]
       },
       {
-        text: 'v1.9.0',
+        text: 'v1.0.0',
         items: [
           { text: 'Changelog', link: '/changelog' },
           { text: 'Claude Agent SDK', link: '/AGENT-SDK' },
