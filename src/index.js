@@ -381,6 +381,19 @@ export function listInstalledAgents(cwd = process.cwd()) {
  * const parsed = readClaudeMd('/path/to/project');
  */
 export function readClaudeMd(cwd = process.cwd()) {
+  // Emit deprecation warning (only once per process)
+  if (!readClaudeMd._warned) {
+    readClaudeMd._warned = true;
+    process.emitWarning(
+      'readClaudeMd() is deprecated. Use readClaudeMdAsync() instead for better performance.',
+      {
+        type: 'DeprecationWarning',
+        code: 'AIX_DEP_001',
+        detail: 'Synchronous file reads block the event loop. See: https://nodejs.org/api/deprecations.html'
+      }
+    );
+  }
+
   const path = join(cwd, 'CLAUDE.md');
   if (!existsSync(path)) {
     return null;
@@ -389,6 +402,8 @@ export function readClaudeMd(cwd = process.cwd()) {
   const content = readFileSync(path, 'utf-8');
   return parseClaudeMd(content);
 }
+// Track if deprecation warning has been emitted
+readClaudeMd._warned = false;
 
 /**
  * Read and parse CLAUDE.md (async version)
