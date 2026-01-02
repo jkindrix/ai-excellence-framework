@@ -45,10 +45,49 @@ const program = new Command();
 program
   .name('ai-excellence')
   .description('AI Excellence Framework - Reduce friction in AI-assisted development')
-  .version(packageJson.version);
+  .version(packageJson.version)
+  .addHelpText('after', `
+Examples:
+  $ ai-excellence init                    # Initialize with standard preset
+  $ ai-excellence init --preset full      # Full setup with MCP and metrics
+  $ ai-excellence init --preset minimal   # Minimal setup (CLAUDE.md only)
+  $ ai-excellence validate --fix          # Validate and auto-fix issues
+  $ ai-excellence doctor                  # Check framework health
+  $ ai-excellence generate cursor         # Generate Cursor IDE rules
+  $ ai-excellence generate --all          # Generate configs for all tools
+
+More info: https://ai-excellence-framework.github.io/
+`);
 
 // Valid presets
 const VALID_PRESETS = ['minimal', 'standard', 'full', 'team'];
+
+/**
+ * Sanitize user input for safe display in error messages.
+ * Prevents terminal escape sequence injection and limits length.
+ *
+ * @param {string} input - User-provided input
+ * @param {number} [maxLength=50] - Maximum length to display
+ * @returns {string} Sanitized string safe for terminal output
+ */
+function sanitizeForDisplay(input, maxLength = 50) {
+  if (typeof input !== 'string') {
+    return String(input).slice(0, maxLength);
+  }
+
+  // Remove control characters and ANSI escape sequences
+  let sanitized = input
+    .replace(/[\x00-\x1f\x7f]/g, '') // Remove control characters
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '') // Remove ANSI escape sequences
+    .replace(/\x1b\][^\x07]*\x07/g, ''); // Remove OSC sequences
+
+  // Truncate if too long
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.slice(0, maxLength) + '...';
+  }
+
+  return sanitized;
+}
 
 // Init command
 program
@@ -62,7 +101,8 @@ program
   .hook('preAction', thisCommand => {
     const { preset } = thisCommand.opts();
     if (preset && !VALID_PRESETS.includes(preset)) {
-      console.error(chalk.red(`\nError: Invalid preset '${preset}'`));
+      const safePreset = sanitizeForDisplay(preset);
+      console.error(chalk.red(`\nError: Invalid preset '${safePreset}'`));
       console.log(chalk.gray(`Valid presets: ${VALID_PRESETS.join(', ')}`));
       process.exit(1);
     }

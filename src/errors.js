@@ -18,6 +18,68 @@
  * @see https://github.com/lirantal/nodejs-cli-apps-best-practices
  */
 
+import { homedir } from 'os';
+import { relative, isAbsolute } from 'path';
+
+/**
+ * Sanitize context object to prevent sensitive path leakage.
+ * Replaces home directory paths with ~ and absolute paths with relative versions.
+ *
+ * @param {Object} context - Context object to sanitize
+ * @param {string} [basePath=process.cwd()] - Base path for relative conversion
+ * @returns {Object} Sanitized context object
+ */
+function sanitizeContext(context, basePath = process.cwd()) {
+  if (!context || typeof context !== 'object') {
+    return context;
+  }
+
+  const home = homedir();
+  const result = {};
+
+  for (const [key, value] of Object.entries(context)) {
+    if (typeof value === 'string') {
+      let sanitized = value;
+
+      // Replace home directory with ~
+      if (home && sanitized.includes(home)) {
+        sanitized = sanitized.replace(new RegExp(escapeRegExp(home), 'g'), '~');
+      }
+
+      // Convert absolute paths to relative (but keep the ~ substitution)
+      if (isAbsolute(sanitized) && !sanitized.startsWith('~')) {
+        try {
+          const rel = relative(basePath, sanitized);
+          // Only use relative if it doesn't escape too far
+          if (!rel.startsWith('..') || rel.split('..').length <= 3) {
+            sanitized = rel || '.';
+          }
+        } catch {
+          // Keep original if relative conversion fails
+        }
+      }
+
+      result[key] = sanitized;
+    } else if (typeof value === 'object' && value !== null) {
+      // Recursively sanitize nested objects
+      result[key] = sanitizeContext(value, basePath);
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Escape special regex characters in a string
+ * @param {string} str - String to escape
+ * @returns {string} Escaped string safe for use in RegExp
+ */
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Base error class for all framework errors.
  * Extends Error with structured properties for tracking and debugging.
@@ -45,9 +107,11 @@ export class FrameworkError extends Error {
 
   /**
    * Returns a structured representation for logging/debugging.
+   * Context paths are sanitized to prevent leaking sensitive directory information.
+   * @param {boolean} [sanitize=true] - Whether to sanitize paths in context
    * @returns {Object} Structured error object
    */
-  toJSON() {
+  toJSON(sanitize = true) {
     return {
       name: this.name,
       code: this.code,
@@ -55,7 +119,7 @@ export class FrameworkError extends Error {
       timestamp: this.timestamp,
       recoverable: this.recoverable,
       suggestion: this.suggestion,
-      context: this.context,
+      context: sanitize ? sanitizeContext(this.context) : this.context,
       stack: this.stack
     };
   }
