@@ -31,6 +31,9 @@ import { lintCommand } from '../src/commands/lint.js';
 import { uninstall } from '../src/commands/uninstall.js';
 import { detectCommand } from '../src/commands/detect.js';
 
+// Import error handling
+import { FrameworkError, createError, getExitCode } from '../src/errors.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -44,6 +47,9 @@ program
   .description('AI Excellence Framework - Reduce friction in AI-assisted development')
   .version(packageJson.version);
 
+// Valid presets
+const VALID_PRESETS = ['minimal', 'standard', 'full', 'team'];
+
 // Init command
 program
   .command('init')
@@ -53,11 +59,20 @@ program
     'Preset configuration (minimal, standard, full, team)',
     'standard'
   )
+  .hook('preAction', thisCommand => {
+    const { preset } = thisCommand.opts();
+    if (preset && !VALID_PRESETS.includes(preset)) {
+      console.error(chalk.red(`\nError: Invalid preset '${preset}'`));
+      console.log(chalk.gray(`Valid presets: ${VALID_PRESETS.join(', ')}`));
+      process.exit(1);
+    }
+  })
   .option('-f, --force', 'Overwrite existing files', false)
   .option('-y, --yes', 'Skip interactive prompts, use defaults', false)
   .option('--dry-run', 'Show what would be created without making changes', false)
   .option('--no-hooks', 'Skip pre-commit hooks installation')
   .option('--no-mcp', 'Skip MCP server setup')
+  .option('--verbose', 'Show detailed installation progress', false)
   .action(initCommand);
 
 // Validate command
@@ -66,6 +81,7 @@ program
   .description('Validate your AI Excellence Framework configuration')
   .option('--fix', 'Attempt to fix issues automatically', false)
   .option('--json', 'Output results as JSON', false)
+  .option('--verbose', 'Show detailed validation output', false)
   .action(validateCommand);
 
 // Update command
@@ -74,6 +90,7 @@ program
   .description('Update the framework to the latest version')
   .option('--check', 'Check for updates without installing', false)
   .option('-f, --force', 'Force update even if no changes detected', false)
+  .option('--verbose', 'Show detailed update progress', false)
   .action(updateCommand);
 
 // Doctor command
@@ -93,6 +110,7 @@ program
   .option('-f, --force', 'Overwrite existing files', false)
   .option('--dry-run', 'Show what would be created without making changes', false)
   .option('--json', 'Output results as JSON', false)
+  .option('--verbose', 'Show detailed generation output', false)
   .action(generateCommand);
 
 // Lint command (configuration validation)
@@ -112,6 +130,7 @@ program
   .option('-f, --force', 'Skip confirmation prompt', false)
   .option('--keep-config', 'Preserve CLAUDE.md file', false)
   .option('--json', 'Output results as JSON', false)
+  .option('--verbose', 'Show detailed removal progress', false)
   .action(uninstall);
 
 // Detect command
@@ -136,12 +155,39 @@ program.exitOverride(err => {
   process.exit(1);
 });
 
-// Parse arguments
-program.parse();
+// Main execution with error boundary
+async function main() {
+  try {
+    // Parse arguments
+    await program.parseAsync();
 
-// Show help if no command provided
-if (!process.argv.slice(2).length) {
-  console.log(chalk.cyan('\n  AI Excellence Framework'));
-  console.log(chalk.gray('  Reduce friction in AI-assisted development\n'));
-  program.help();
+    // Show help if no command provided
+    if (!process.argv.slice(2).length) {
+      console.log(chalk.cyan('\n  AI Excellence Framework'));
+      console.log(chalk.gray('  Reduce friction in AI-assisted development\n'));
+      program.help();
+    }
+  } catch (error) {
+    // Handle FrameworkError with proper formatting and exit codes
+    if (error instanceof FrameworkError) {
+      console.error(error.format(process.env.VERBOSE === 'true'));
+      process.exit(getExitCode(error.code));
+    }
+
+    // Handle commander errors (already handled by exitOverride, but as safety net)
+    if (error.code?.startsWith('commander.')) {
+      // Already handled by exitOverride
+      return;
+    }
+
+    // Handle unexpected errors
+    const wrapped = createError('AIX-GEN-900', error.message, {
+      cause: error,
+      context: { originalStack: error.stack }
+    });
+    console.error(wrapped.format(process.env.VERBOSE === 'true'));
+    process.exit(1);
+  }
 }
+
+main();

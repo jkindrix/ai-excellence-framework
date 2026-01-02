@@ -65,8 +65,36 @@ if [ ! -f "$CLAUDE_MD" ]; then
     exit 0
 fi
 
-# Check file size
-file_size=$(stat -f%z "$CLAUDE_MD" 2>/dev/null || stat -c%s "$CLAUDE_MD" 2>/dev/null || echo "0")
+# Check file size with robust cross-platform detection
+get_file_size() {
+    local file="$1"
+    local size=0
+
+    # Try BSD stat (macOS)
+    if size=$(stat -f%z "$file" 2>/dev/null); then
+        echo "$size"
+        return 0
+    fi
+
+    # Try GNU stat (Linux)
+    if size=$(stat -c%s "$file" 2>/dev/null); then
+        echo "$size"
+        return 0
+    fi
+
+    # Fallback: use wc -c (works everywhere but may include filename)
+    if size=$(wc -c < "$file" 2>/dev/null); then
+        echo "$size"
+        return 0
+    fi
+
+    # Final fallback: return 0 and log warning
+    warn "Could not determine file size for $file"
+    echo "0"
+    return 1
+}
+
+file_size=$(get_file_size "$CLAUDE_MD")
 file_size_kb=$((file_size / 1024))
 
 if [ "$file_size_kb" -gt "$MAX_SIZE_KB" ]; then
@@ -74,8 +102,23 @@ if [ "$file_size_kb" -gt "$MAX_SIZE_KB" ]; then
     info "Large files may cause context issues. Consider splitting into separate docs."
 fi
 
-# Read file content
+# Safety limit: skip validation for extremely large files (>1MB)
+MAX_PROCESS_SIZE_KB=1024
+if [ "$file_size_kb" -gt "$MAX_PROCESS_SIZE_KB" ]; then
+    warn "CLAUDE.md is too large (${file_size_kb}KB) to validate efficiently"
+    info "Maximum processable size: ${MAX_PROCESS_SIZE_KB}KB"
+    info "Consider splitting your documentation into smaller files"
+    exit 0
+fi
+
+# Read file content with length limit for grep operations
 content=$(cat "$CLAUDE_MD")
+content_length=${#content}
+
+# Warn if content is very long (may cause performance issues)
+if [ "$content_length" -gt 500000 ]; then
+    info "File content is large (${content_length} chars), validation may be slower"
+fi
 
 # Check required sections
 for section in "${REQUIRED_SECTIONS[@]}"; do
@@ -137,8 +180,16 @@ fi
 
 # Check for stale "Current State" section
 if echo "$content" | grep -qi "## Current State"; then
-    # Look for common staleness indicators
-    if echo "$content" | grep -qiE "(initial setup|todo|placeholder|coming soon)" | grep -i "current state" -A5; then
+    # Extract the Current State section (from ## Current State to next ## or end)
+    current_state_section=$(echo "$content" | sed -n '/## Current State/,/^## /p' | head -n -1)
+
+    # If section is empty or very short, it might be stale
+    if [ -z "$current_state_section" ]; then
+        current_state_section=$(echo "$content" | sed -n '/## Current State/,$p')
+    fi
+
+    # Look for common staleness indicators within the Current State section
+    if echo "$current_state_section" | grep -qiE "(initial setup|todo|placeholder|coming soon|\[add|\[specify|\[describe)"; then
         info "Consider updating the 'Current State' section with actual status"
     fi
 fi
