@@ -359,8 +359,12 @@ const STANDALONE_SECRET_PATTERNS = [
   /^AIza[a-zA-Z0-9_-]{35}$/, // Google AI
 
   // Cloud Provider Keys
-  /^AKIA[0-9A-Z]{16}$/, // AWS Access Key
-  /^[a-zA-Z0-9/+=]{40}$/, // AWS Secret Key (base64-like, 40 chars)
+  /^AKIA[0-9A-Z]{16}$/, // AWS Access Key ID (long-term credentials)
+  /^ASIA[0-9A-Z]{16}$/, // AWS Access Key ID (temporary STS credentials)
+  // NOTE: AWS Secret Keys are 40-char base64 strings without distinctive prefixes,
+  // making standalone detection prone to false positives. Secret keys are detected
+  // via context patterns in SECRET_PATTERNS (index.js) like "aws_secret_access_key="
+  // @see https://summitroute.com/blog/2018/06/20/aws_security_credential_formats/
 
   // Version Control Systems
   /^ghp_[a-zA-Z0-9]{36}$/, // GitHub Personal Access Token
@@ -388,12 +392,13 @@ const STANDALONE_SECRET_PATTERNS = [
 
   // Cryptographic Material
   /^-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/, // Private Keys
-  /^eyJ[a-zA-Z0-9_-]{17,200}\.eyJ[a-zA-Z0-9_-]{17,500}\.[a-zA-Z0-9_-]{40,500}$/, // JWT (bounded)
+  /^eyJ[a-zA-Z0-9_-]{17,200}\.eyJ[a-zA-Z0-9_-]{17,500}\.[a-zA-Z0-9_-]{40,500}$/ // JWT (bounded)
 
-  // Generic patterns (last resort, more prone to false positives)
-  /^[a-f0-9]{32}$/, // 32-char hex (MD5-like, API keys)
-  /^[a-f0-9]{40}$/, // 40-char hex (SHA1-like)
-  /^[a-f0-9]{64}$/i // 64-char hex (SHA256-like)
+  // NOTE: Generic hex patterns (32/40/64 char) removed due to excessive false positives:
+  // - 32-char hex matches MD5 hashes (common in checksums, cache keys)
+  // - 40-char hex matches git commit SHAs (extremely common in codebases)
+  // - 64-char hex matches SHA256 hashes (used everywhere for integrity checks)
+  // Secrets that are pure hex are rare; most have distinctive prefixes caught above.
 ];
 
 /**
