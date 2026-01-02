@@ -32,6 +32,71 @@
  */
 
 // ============================================
+// Type Definitions (JSDoc for IDE support)
+// ============================================
+
+/**
+ * @typedef {'minimal' | 'standard' | 'full' | 'team'} PresetName
+ * Valid preset names for framework initialization
+ */
+
+/**
+ * @typedef {'plan' | 'verify' | 'handoff' | 'assumptions' | 'review' | 'security-review' | 'refactor' | 'test-coverage'} CommandName
+ * Available slash command names
+ */
+
+/**
+ * @typedef {'reviewer' | 'explorer' | 'tester'} AgentName
+ * Available subagent names
+ */
+
+/**
+ * @typedef {Object} MetricsConfig
+ * @property {boolean} [enabled=false] - Whether metrics collection is enabled
+ * @property {boolean} [autoCollect=false] - Whether to automatically collect metrics
+ */
+
+/**
+ * @typedef {Object} PresetConfig
+ * @property {string} description - Human-readable description of the preset
+ * @property {CommandName[]} commands - List of commands included in this preset
+ * @property {AgentName[]} agents - List of agents included in this preset
+ * @property {boolean} hooks - Whether git hooks are enabled
+ * @property {boolean} mcp - Whether MCP server is enabled
+ * @property {boolean} preCommit - Whether pre-commit configuration is included
+ * @property {MetricsConfig} [metrics] - Optional metrics configuration
+ * @property {boolean} [federation] - Whether team federation is enabled
+ */
+
+/**
+ * @typedef {Object} InstallationStatus
+ * @property {boolean} installed - Whether the framework is installed
+ * @property {PresetName|null} preset - Detected preset level, or null if not installed
+ * @property {Object} checks - Individual component check results
+ * @property {boolean} checks.claudeMd - Whether CLAUDE.md exists
+ * @property {boolean} checks.commandsDir - Whether .claude/commands exists
+ * @property {boolean} checks.agentsDir - Whether .claude/agents exists
+ * @property {boolean} checks.preCommit - Whether .pre-commit-config.yaml exists
+ * @property {boolean} checks.mcpServer - Whether MCP server is installed
+ */
+
+/**
+ * @typedef {Object} SecretMatch
+ * @property {string} name - Name of the secret pattern that matched
+ * @property {string} category - Category of the secret (e.g., 'ai', 'cloud', 'database')
+ * @property {string} match - The matched secret value
+ * @property {number} line - Line number where the secret was found
+ */
+
+/**
+ * @typedef {Object} ClaudeMdStructure
+ * @property {boolean} valid - Whether the structure is valid
+ * @property {string[]} missingSections - List of missing required sections
+ * @property {string[]} presentSections - List of present sections
+ * @property {Object.<string, string>} [sections] - Parsed section contents (if available)
+ */
+
+// ============================================
 // Command Exports
 // ============================================
 
@@ -183,8 +248,8 @@ export const PRESET_CONFIGS = {
 
 /**
  * Get configuration for a preset
- * @param {string} presetName - Name of the preset
- * @returns {Object} Preset configuration
+ * @param {PresetName} presetName - Name of the preset
+ * @returns {PresetConfig} Preset configuration
  */
 export function getPresetConfig(presetName) {
   return PRESET_CONFIGS[presetName] || PRESET_CONFIGS.standard;
@@ -193,7 +258,9 @@ export function getPresetConfig(presetName) {
 /**
  * Merge user configuration with defaults
  * @param {Object} userConfig - User-provided configuration
- * @returns {Object} Merged configuration
+ * @param {PresetName} [userConfig.preset] - Preset to use as base
+ * @param {MetricsConfig} [userConfig.metrics] - Metrics configuration overrides
+ * @returns {PresetConfig} Merged configuration
  */
 export function mergeConfig(userConfig = {}) {
   const base = userConfig.preset
@@ -226,7 +293,7 @@ const PACKAGE_ROOT = join(__dirname, '..');
 /**
  * Check if framework is installed in a directory
  * @param {string} [cwd=process.cwd()] - Directory to check
- * @returns {Object} Installation status
+ * @returns {InstallationStatus} Installation status with component checks
  */
 export function checkInstallation(cwd = process.cwd()) {
   const checks = {
@@ -395,11 +462,12 @@ export const SECRET_PATTERNS = {
   ],
 
   // Database Connection Strings
+  // Note: Length limits {1,100} added to prevent ReDoS on malformed input
   database: [
-    { name: 'MongoDB URI', pattern: /mongodb(\+srv)?:\/\/[^:\s]+:[^@\s]+@[^\s]+/g },
-    { name: 'PostgreSQL URI', pattern: /postgres(ql)?:\/\/[^:\s]+:[^@\s]+@[^\s]+/g },
-    { name: 'MySQL URI', pattern: /mysql:\/\/[^:\s]+:[^@\s]+@[^\s]+/g },
-    { name: 'Redis URI', pattern: /redis:\/\/[^:\s]+:[^@\s]+@[^\s]+/g }
+    { name: 'MongoDB URI', pattern: /mongodb(\+srv)?:\/\/[^:\s]{1,100}:[^@\s]{1,100}@[^\s]{1,200}/g },
+    { name: 'PostgreSQL URI', pattern: /postgres(ql)?:\/\/[^:\s]{1,100}:[^@\s]{1,100}@[^\s]{1,200}/g },
+    { name: 'MySQL URI', pattern: /mysql:\/\/[^:\s]{1,100}:[^@\s]{1,100}@[^\s]{1,200}/g },
+    { name: 'Redis URI', pattern: /redis:\/\/[^:\s]{1,100}:[^@\s]{1,100}@[^\s]{1,200}/g }
   ],
 
   // Package Registry Tokens
@@ -417,7 +485,12 @@ export const SECRET_PATTERNS = {
   // Cryptographic Material
   crypto: [
     { name: 'Private Key', pattern: /-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g },
-    { name: 'JWT Token', pattern: /eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g }
+    // JWT pattern with minimum lengths to reduce false positives:
+    // - Header (eyJ...): minimum 20 chars (typical: 30+)
+    // - Payload (eyJ...): minimum 20 chars (typical: 50+)
+    // - Signature: minimum 40 chars (HS256: 43 chars, RS256: 342 chars)
+    // Total minimum: ~100 chars for a real JWT
+    { name: 'JWT Token', pattern: /eyJ[a-zA-Z0-9_-]{17,}\.eyJ[a-zA-Z0-9_-]{17,}\.[a-zA-Z0-9_-]{40,}/g }
   ]
 };
 

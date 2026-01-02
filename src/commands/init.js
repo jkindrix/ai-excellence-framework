@@ -4,7 +4,8 @@
  * Initializes the framework in a project directory.
  */
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
+import { readFile, writeFile, mkdir, chmod } from 'fs/promises';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
@@ -12,71 +13,44 @@ import ora from 'ora';
 import enquirer from 'enquirer';
 import fse from 'fs-extra';
 import { createError, FrameworkError } from '../errors.js';
+import { PRESET_CONFIGS } from '../index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PACKAGE_ROOT = join(__dirname, '..', '..');
 
-// Preset configurations
-const PRESETS = {
-  minimal: {
-    name: 'Minimal',
-    description: 'CLAUDE.md + essential commands only',
+/**
+ * Convert the shared PRESET_CONFIGS format to init command format.
+ * This ensures preset definitions are centralized in index.js while
+ * providing the component structure needed by the init command.
+ *
+ * @param {string} presetName - Name of the preset
+ * @param {Object} preset - Preset configuration from PRESET_CONFIGS
+ * @returns {Object} Init command format preset
+ */
+function convertPresetFormat(presetName, preset) {
+  return {
+    name: presetName.charAt(0).toUpperCase() + presetName.slice(1),
+    description: preset.description,
     components: {
       claudeMd: true,
-      commands: ['plan', 'verify'],
-      agents: [],
-      hooks: false,
-      mcp: false,
-      preCommit: false,
-      templates: false,
-      metrics: false
+      commands: preset.commands || [],
+      agents: preset.agents || [],
+      hooks: preset.hooks || false,
+      mcp: preset.mcp || false,
+      preCommit: preset.preCommit || false,
+      templates: preset.preCommit || false, // Templates go with preCommit
+      metrics: preset.metrics?.enabled || false,
+      teamFeatures: preset.federation || false
     }
-  },
-  standard: {
-    name: 'Standard',
-    description: 'Recommended setup for individual developers',
-    components: {
-      claudeMd: true,
-      commands: ['plan', 'verify', 'handoff', 'assumptions', 'review', 'security-review'],
-      agents: ['reviewer', 'explorer', 'tester'],
-      hooks: true,
-      mcp: false,
-      preCommit: true,
-      templates: true,
-      metrics: false
-    }
-  },
-  full: {
-    name: 'Full',
-    description: 'Complete setup with MCP server and metrics',
-    components: {
-      claudeMd: true,
-      commands: ['plan', 'verify', 'handoff', 'assumptions', 'review', 'security-review'],
-      agents: ['reviewer', 'explorer', 'tester'],
-      hooks: true,
-      mcp: true,
-      preCommit: true,
-      templates: true,
-      metrics: true
-    }
-  },
-  team: {
-    name: 'Team',
-    description: 'Full setup with team collaboration features',
-    components: {
-      claudeMd: true,
-      commands: ['plan', 'verify', 'handoff', 'assumptions', 'review', 'security-review'],
-      agents: ['reviewer', 'explorer', 'tester'],
-      hooks: true,
-      mcp: true,
-      preCommit: true,
-      templates: true,
-      metrics: true,
-      teamFeatures: true
-    }
-  }
-};
+  };
+}
+
+// Build PRESETS from the centralized PRESET_CONFIGS
+// This eliminates duplication and ensures consistency
+const PRESETS = Object.fromEntries(
+  Object.entries(PRESET_CONFIGS).map(([name, config]) => [name, convertPresetFormat(name, config)])
+);
 
 /**
  * Main init command handler
@@ -285,7 +259,7 @@ async function createDirectories(cwd, config, dryRun, results) {
     const fullPath = join(cwd, dir);
     if (!existsSync(fullPath)) {
       if (!dryRun) {
-        mkdirSync(fullPath, { recursive: true });
+        await mkdir(fullPath, { recursive: true });
       }
       results.created.push(`${dir}/`);
     }
@@ -302,7 +276,7 @@ async function installClaudeMd(cwd, dryRun, results) {
   // Check if template exists, otherwise use embedded template
   let content;
   if (existsSync(templatePath)) {
-    content = readFileSync(templatePath, 'utf-8');
+    content = await readFile(templatePath, 'utf-8');
   } else {
     content = generateClaudeMdTemplate();
   }
@@ -313,7 +287,7 @@ async function installClaudeMd(cwd, dryRun, results) {
   content = content.replace(/\[DATE\]/g, new Date().toISOString().split('T')[0]);
 
   if (!dryRun) {
-    writeFileSync(targetPath, content);
+    await writeFile(targetPath, content);
   }
   results.created.push('CLAUDE.md');
 }
@@ -424,7 +398,7 @@ async function installCommands(cwd, commands, dryRun, results) {
 
     if (existsSync(sourcePath)) {
       if (!dryRun) {
-        fse.copySync(sourcePath, targetPath);
+        await fse.copy(sourcePath, targetPath);
       }
       results.created.push(`.claude/commands/${cmd}.md`);
     } else {
@@ -445,7 +419,7 @@ async function installAgents(cwd, agents, dryRun, results) {
 
     if (existsSync(sourcePath)) {
       if (!dryRun) {
-        fse.copySync(sourcePath, targetPath);
+        await fse.copy(sourcePath, targetPath);
       }
       results.created.push(`.claude/agents/${agent}.md`);
     } else {
@@ -469,14 +443,56 @@ async function installHooks(cwd, dryRun, results) {
 
     if (existsSync(sourcePath)) {
       if (!dryRun) {
-        fse.copySync(sourcePath, targetPath);
+        await fse.copy(sourcePath, targetPath);
         // Make executable
-        const { chmod } = await import('fs/promises');
         await chmod(targetPath, 0o755);
       }
       results.created.push(`scripts/hooks/${hook}`);
     }
   }
+}
+
+/**
+ * Validate basic YAML structure without a full parser.
+ * Checks for common issues that would cause pre-commit to fail.
+ *
+ * @param {string} content - YAML file content
+ * @returns {{valid: boolean, errors: string[]}}
+ */
+function validateBasicYaml(content) {
+  const errors = [];
+
+  // Check for tabs (YAML requires spaces)
+  if (content.includes('\t')) {
+    errors.push('YAML file contains tabs (use spaces for indentation)');
+  }
+
+  // Check for required pre-commit config keys
+  if (!content.includes('repos:')) {
+    errors.push('Missing required "repos:" key in pre-commit config');
+  }
+
+  // Check for consistent indentation (basic check)
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Check for odd indentation that would break YAML
+    const leadingSpaces = line.match(/^( *)/)?.[1]?.length || 0;
+    if (leadingSpaces % 2 !== 0 && !line.trim().startsWith('#')) {
+      errors.push(`Line ${i + 1}: Odd indentation (${leadingSpaces} spaces) may cause YAML parsing issues`);
+      break; // Only report first occurrence
+    }
+  }
+
+  // Check for empty file
+  if (content.trim().length === 0) {
+    errors.push('YAML file is empty');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
 }
 
 /**
@@ -487,8 +503,20 @@ async function installPreCommit(cwd, dryRun, results) {
   const targetPath = join(cwd, '.pre-commit-config.yaml');
 
   if (existsSync(sourcePath)) {
+    // Validate template before copying
+    const content = await readFile(sourcePath, 'utf-8');
+    const validation = validateBasicYaml(content);
+
+    if (!validation.valid) {
+      console.warn(
+        `Warning: Pre-commit template has potential issues:\n` +
+          validation.errors.map(e => `  - ${e}`).join('\n')
+      );
+      // Still proceed with copy but warn the user
+    }
+
     if (!dryRun) {
-      fse.copySync(sourcePath, targetPath);
+      await fse.copy(sourcePath, targetPath);
     }
     results.created.push('.pre-commit-config.yaml');
   }
@@ -504,7 +532,7 @@ async function installMcp(cwd, dryRun, results) {
 
   if (existsSync(sourcePath)) {
     if (!dryRun) {
-      fse.copySync(sourcePath, targetPath);
+      await fse.copy(sourcePath, targetPath);
     }
     results.created.push('scripts/mcp/project-memory-server.py');
   }
@@ -512,7 +540,7 @@ async function installMcp(cwd, dryRun, results) {
   // Create requirements.txt for MCP
   const requirementsPath = join(mcpDir, 'requirements.txt');
   if (!dryRun) {
-    writeFileSync(requirementsPath, 'mcp>=1.0.0\n');
+    await writeFile(requirementsPath, 'mcp>=1.0.0\n');
   }
   results.created.push('scripts/mcp/requirements.txt');
 }
@@ -525,7 +553,7 @@ async function installTemplates(cwd, dryRun, results) {
   const sourceDir = join(PACKAGE_ROOT, 'templates');
 
   if (!existsSync(templatesDir) && !dryRun) {
-    mkdirSync(templatesDir, { recursive: true });
+    await mkdir(templatesDir, { recursive: true });
   }
 
   // Copy specific templates
@@ -537,7 +565,7 @@ async function installTemplates(cwd, dryRun, results) {
 
     if (existsSync(sourcePath)) {
       if (!dryRun) {
-        fse.copySync(sourcePath, targetPath);
+        await fse.copy(sourcePath, targetPath);
       }
       results.created.push(`templates/${template}`);
     }
@@ -554,8 +582,7 @@ async function installMetrics(cwd, dryRun, results) {
 
   if (existsSync(sourcePath)) {
     if (!dryRun) {
-      fse.copySync(sourcePath, targetPath);
-      const { chmod } = await import('fs/promises');
+      await fse.copy(sourcePath, targetPath);
       await chmod(targetPath, 0o755);
     }
     results.created.push('scripts/metrics/collect-session-metrics.sh');
@@ -577,16 +604,16 @@ docs/session-notes/*.local.md
 `;
 
   if (existsSync(gitignorePath)) {
-    const existing = readFileSync(gitignorePath, 'utf-8');
+    const existing = await readFile(gitignorePath, 'utf-8');
     if (!existing.includes('AI Excellence Framework')) {
       if (!dryRun) {
-        writeFileSync(gitignorePath, existing + additions);
+        await writeFile(gitignorePath, existing + additions);
       }
       results.created.push('.gitignore (updated)');
     }
   } else {
     if (!dryRun) {
-      writeFileSync(gitignorePath, `${additions.trim()}\n`);
+      await writeFile(gitignorePath, `${additions.trim()}\n`);
     }
     results.created.push('.gitignore');
   }
