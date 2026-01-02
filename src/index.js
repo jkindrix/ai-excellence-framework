@@ -62,11 +62,15 @@ export {
 // Constants
 // ============================================
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const packageJson = require('../package.json');
+
 /**
- * Framework version (semver)
+ * Framework version (semver) - read from package.json to avoid duplication
  * @constant {string}
  */
-export const VERSION = '1.0.0';
+export const VERSION = packageJson.version;
 
 /**
  * Available presets for initialization
@@ -336,30 +340,118 @@ export function parseClaudeMd(content) {
 }
 
 /**
- * Check for potential secrets in content
- * @param {string} content - Content to check
- * @returns {Object} Detection result
+ * Secret detection patterns organized by category
+ * @type {Object.<string, Array<{name: string, pattern: RegExp}>>}
  */
-export function detectSecrets(content) {
-  const patterns = [
+export const SECRET_PATTERNS = {
+  // Generic credential patterns
+  generic: [
     { name: 'API Key', pattern: /api[_-]?key\s*[:=]\s*["'][^"']{16,}["']/gi },
     { name: 'Password', pattern: /password\s*[:=]\s*["'][^"']{8,}["']/gi },
     { name: 'Secret', pattern: /secret\s*[:=]\s*["'][^"']{8,}["']/gi },
+    { name: 'Bearer Token', pattern: /bearer\s+[a-zA-Z0-9_.-]{20,}/gi }
+  ],
+
+  // AI/ML API Keys
+  ai_ml: [
     { name: 'OpenAI Key', pattern: /sk-[a-zA-Z0-9]{32,}/g },
+    { name: 'Anthropic Key', pattern: /sk-ant-[a-zA-Z0-9_-]{32,}/g },
+    { name: 'Google AI Key', pattern: /AIza[a-zA-Z0-9_-]{35}/g }
+  ],
+
+  // Cloud Provider Keys
+  cloud: [
+    { name: 'AWS Access Key', pattern: /AKIA[0-9A-Z]{16}/g },
+    { name: 'AWS Secret Key', pattern: /aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*["'][a-zA-Z0-9/+=]{40}["']/gi },
+    { name: 'Azure Connection String', pattern: /DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[a-zA-Z0-9+/=]{88}/g },
+    { name: 'GCP Service Account', pattern: /"type"\s*:\s*"service_account"/g }
+  ],
+
+  // Version Control Systems
+  vcs: [
     { name: 'GitHub Token', pattern: /ghp_[a-zA-Z0-9]{36}/g },
+    { name: 'GitHub OAuth', pattern: /gho_[a-zA-Z0-9]{36}/g },
+    { name: 'GitHub App Token', pattern: /ghu_[a-zA-Z0-9]{36}/g },
+    { name: 'GitHub Refresh Token', pattern: /ghr_[a-zA-Z0-9]{36}/g },
     { name: 'GitLab Token', pattern: /glpat-[a-zA-Z0-9-]{20}/g },
-    { name: 'AWS Key', pattern: /AKIA[0-9A-Z]{16}/g },
-    {
-      name: 'Private Key',
-      pattern: /-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----/g
+    { name: 'Bitbucket Token', pattern: /ATBB[a-zA-Z0-9]{32}/g }
+  ],
+
+  // Communication Platforms
+  communication: [
+    { name: 'Slack Token', pattern: /xox[baprs]-[a-zA-Z0-9-]{10,}/g },
+    { name: 'Slack Webhook', pattern: /hooks\.slack\.com\/services\/T[a-zA-Z0-9_]+\/B[a-zA-Z0-9_]+\/[a-zA-Z0-9_]+/g },
+    { name: 'Discord Webhook', pattern: /discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+/g },
+    { name: 'Twilio Key', pattern: /SK[a-f0-9]{32}/g },
+    { name: 'Twilio Auth Token', pattern: /twilio[_-]?auth[_-]?token\s*[:=]\s*["'][a-f0-9]{32}["']/gi }
+  ],
+
+  // Payment Providers
+  payment: [
+    { name: 'Stripe Live Key', pattern: /sk_live_[a-zA-Z0-9]{24,}/g },
+    { name: 'Stripe Test Key', pattern: /sk_test_[a-zA-Z0-9]{24,}/g },
+    { name: 'Stripe Publishable', pattern: /pk_(live|test)_[a-zA-Z0-9]{24,}/g },
+    { name: 'PayPal Secret', pattern: /paypal[_-]?secret\s*[:=]\s*["'][a-zA-Z0-9]{32,}["']/gi }
+  ],
+
+  // Database Connection Strings
+  database: [
+    { name: 'MongoDB URI', pattern: /mongodb(\+srv)?:\/\/[^:\s]+:[^@\s]+@[^\s]+/g },
+    { name: 'PostgreSQL URI', pattern: /postgres(ql)?:\/\/[^:\s]+:[^@\s]+@[^\s]+/g },
+    { name: 'MySQL URI', pattern: /mysql:\/\/[^:\s]+:[^@\s]+@[^\s]+/g },
+    { name: 'Redis URI', pattern: /redis:\/\/[^:\s]+:[^@\s]+@[^\s]+/g }
+  ],
+
+  // Package Registry Tokens
+  registry: [
+    { name: 'npm Token', pattern: /npm_[a-zA-Z0-9]{36}/g },
+    { name: 'PyPI Token', pattern: /pypi-[a-zA-Z0-9_-]{100,}/g }
+  ],
+
+  // Email/Marketing Services
+  email: [
+    { name: 'SendGrid Key', pattern: /SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}/g },
+    { name: 'Mailchimp Key', pattern: /[a-f0-9]{32}-us[0-9]{1,2}/g }
+  ],
+
+  // Cryptographic Material
+  crypto: [
+    { name: 'Private Key', pattern: /-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g },
+    { name: 'JWT Token', pattern: /eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g }
+  ]
+};
+
+/**
+ * Get all secret patterns as a flat array
+ * @returns {Array<{name: string, pattern: RegExp, category: string}>}
+ */
+export function getAllSecretPatterns() {
+  const patterns = [];
+  for (const [category, categoryPatterns] of Object.entries(SECRET_PATTERNS)) {
+    for (const { name, pattern } of categoryPatterns) {
+      patterns.push({ name, pattern, category });
     }
-  ];
+  }
+  return patterns;
+}
+
+/**
+ * Check for potential secrets in content
+ * @param {string} content - Content to check
+ * @param {Object} [options] - Detection options
+ * @param {string[]} [options.categories] - Categories to check (default: all)
+ * @returns {Object} Detection result with category information
+ */
+export function detectSecrets(content, options = {}) {
+  const patterns = options.categories
+    ? options.categories.flatMap(cat => (SECRET_PATTERNS[cat] || []).map(p => ({ ...p, category: cat })))
+    : getAllSecretPatterns();
 
   const findings = [];
-  for (const { name, pattern } of patterns) {
+  for (const { name, pattern, category } of patterns) {
     const matches = content.match(pattern);
     if (matches) {
-      findings.push({ type: name, count: matches.length });
+      findings.push({ type: name, category, count: matches.length });
     }
   }
 

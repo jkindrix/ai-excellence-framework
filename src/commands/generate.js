@@ -44,10 +44,15 @@ import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import ora from 'ora';
+import { createError, FrameworkError } from '../errors.js';
+
+// Import modular generators (available for future use)
+// The modular structure is established in src/generators/ for incremental migration
+// Currently using local implementations for stability; switch to modular imports when ready:
+// import { parseProjectContext, printResults, generateAgentsMd, ... } from '../generators/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const _PACKAGE_ROOT = join(__dirname, '..', '..');
 
 /**
  * Supported AI tools
@@ -83,7 +88,29 @@ export const SUPPORTED_TOOLS = [
 ];
 
 /**
+ * Set for O(1) tool name lookup
+ * @type {Set<string>}
+ */
+const SUPPORTED_TOOLS_SET = new Set(SUPPORTED_TOOLS);
+
+/**
+ * Check if a tool name is supported
+ * @param {string} tool - Tool name to check
+ * @returns {boolean} True if tool is supported
+ */
+export function isToolSupported(tool) {
+  return SUPPORTED_TOOLS_SET.has(tool);
+}
+
+/**
  * Main generate command handler
+ *
+ * @param {object} options - Command options
+ * @param {string|string[]} [options.tools=['all']] - AI tools to generate configs for
+ * @param {boolean} [options.force=false] - Overwrite existing files
+ * @param {boolean} [options.dryRun=false] - Show what would be created without creating
+ * @returns {Promise<void>} Resolves when generation is complete
+ * @throws {FrameworkError} If generation fails
  */
 export async function generateCommand(options) {
   const cwd = process.cwd();
@@ -100,12 +127,13 @@ export async function generateCommand(options) {
     tools = SUPPORTED_TOOLS.filter(t => t !== 'all');
   }
 
-  // Validate tools
-  const invalidTools = tools.filter(t => !SUPPORTED_TOOLS.includes(t));
+  // Validate tools (using O(1) Set lookup)
+  const invalidTools = tools.filter(t => !isToolSupported(t));
   if (invalidTools.length > 0) {
-    console.error(chalk.red(`  Invalid tools: ${invalidTools.join(', ')}`));
-    console.log(chalk.gray(`  Supported: ${SUPPORTED_TOOLS.join(', ')}`));
-    process.exit(1);
+    throw createError(
+      'AIX-CONFIG-303',
+      `Invalid tools: ${invalidTools.join(', ')}. Supported: ${SUPPORTED_TOOLS.join(', ')}`
+    );
   }
 
   // Check for CLAUDE.md as source of truth
@@ -222,13 +250,20 @@ export async function generateCommand(options) {
     printResults(results, options.dryRun);
   } catch (error) {
     spinner.fail('Generation failed');
-    console.error(chalk.red(`\n  Error: ${error.message}\n`));
-    process.exit(1);
+
+    // Re-throw if already a FrameworkError
+    if (error instanceof FrameworkError) {
+      throw error;
+    }
+
+    // Wrap and throw (CLI will handle exit code)
+    throw createError('AIX-GEN-900', error.message, { cause: error });
   }
 }
 
 /**
  * Parse CLAUDE.md into structured project context
+ * Note: Also available in modular form at ../generators/base.js
  */
 function parseProjectContext(content) {
   const context = {
@@ -337,6 +372,7 @@ function extractSecurityChecklist(content) {
 /**
  * Generate AGENTS.md (Linux Foundation standard)
  * @see https://agents.md
+ * Note: Also available in modular form at ../generators/agents.js
  */
 async function generateAgentsMd(cwd, context, options, results) {
   const targetPath = join(cwd, 'AGENTS.md');
