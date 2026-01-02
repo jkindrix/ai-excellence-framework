@@ -272,23 +272,50 @@ def set_purge_token(token: str) -> float:
         return PURGE_TOKEN_TTL
 
 
-def validate_and_clear_purge_token(provided_token: str) -> bool:
-    """Validate the provided token and clear it if valid."""
+def validate_and_clear_purge_token(provided_token: str) -> tuple[bool, Optional[str], float]:
+    """Validate the provided token and clear it if valid.
+
+    Returns a tuple of (success, expected_token, remaining_seconds):
+    - If validation succeeds: (True, None, 0)
+    - If token doesn't match: (False, expected_token, remaining_seconds)
+    - If no pending token or expired: (False, None, 0)
+
+    This atomic operation prevents race conditions between validation
+    and error message generation.
+    """
     global _pending_purge_token, _purge_token_expires
     with _purge_token_lock:
-        if _pending_purge_token and time.time() < _purge_token_expires:
+        now = time.time()
+        if _pending_purge_token and now < _purge_token_expires:
             if provided_token == _pending_purge_token:
                 _pending_purge_token = None
                 _purge_token_expires = 0
-                return True
-        return False
+                return (True, None, 0)
+            else:
+                # Token doesn't match - return expected token for error message
+                return (False, _pending_purge_token, _purge_token_expires - now)
+        # No pending token or expired
+        return (False, None, 0)
 
 
 class ConnectionPool:
-    """Thread-safe SQLite connection pool for team deployments."""
+    """Thread-safe SQLite connection pool for team deployments.
+
+    Features:
+    - Connection pooling with configurable size
+    - Temporary connection overflow for burst traffic
+    - Wait queue with timeout when pool is exhausted
+    - Health tracking and Prometheus metrics
+    """
 
     # Maximum temporary connections to prevent unbounded resource usage
     MAX_TEMP_CONNECTIONS = 10
+
+    # Maximum time to wait for a connection when pool is exhausted (seconds)
+    WAIT_QUEUE_TIMEOUT = 30.0
+
+    # Maximum requests that can wait in queue (backpressure)
+    MAX_WAIT_QUEUE_SIZE = 50
 
     def __init__(self, db_path: Path, pool_size: int = 5):
         self.db_path = db_path
@@ -303,6 +330,10 @@ class ConnectionPool:
         # Active temporary connection tracking
         self._active_temp_connections = 0
         self._temp_conn_lock = threading.Lock()
+        # Wait queue tracking for backpressure
+        self._waiting_count = 0
+        self._waiting_lock = threading.Lock()
+        self._pool_available = threading.Condition(self._waiting_lock)
 
     def _create_connection(self) -> sqlite3.Connection:
         """Create a new database connection with optimal settings.
@@ -339,80 +370,161 @@ class ConnectionPool:
             self._initialized = True
             logger.info(f"Connection pool initialized with {self.pool_size} connections")
 
+    def _return_connection(self, conn: sqlite3.Connection) -> None:
+        """Return a connection to the pool and notify waiting threads."""
+        try:
+            self._pool.put_nowait(conn)
+        except Exception:
+            conn.close()
+            return
+
+        # Notify any waiting threads that a connection is available
+        with self._pool_available:
+            self._pool_available.notify()
+
     @contextmanager
     def get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         """Get a connection from the pool (context manager).
 
-        If the pool is exhausted and temp connection limit is reached,
-        raises RuntimeError to prevent unbounded resource usage.
+        Strategy:
+        1. Try to get from pool immediately
+        2. If pool empty, try to create a temporary connection
+        3. If temp connections maxed, wait in queue with timeout
+        4. If timeout expires, raise RuntimeError
+
+        The wait queue provides backpressure for burst traffic instead of
+        immediately failing when resources are constrained.
         """
         if not self._initialized:
             self.initialize()
 
         conn = None
         is_temp_connection = False
+
         try:
-            conn = self._pool.get(timeout=30.0)
-            yield conn
-        except Empty:
-            # Pool exhausted - check if we can create a temp connection
+            # First, try to get a connection immediately (non-blocking)
+            try:
+                conn = self._pool.get_nowait()
+                yield conn
+                return
+            except Empty:
+                pass
+
+            # Pool is empty - try to create a temporary connection
             with self._temp_conn_lock:
-                if self._active_temp_connections >= self.MAX_TEMP_CONNECTIONS:
+                if self._active_temp_connections < self.MAX_TEMP_CONNECTIONS:
+                    # We can create a temporary connection
+                    self._exhaustion_count += 1
+                    self._temp_connections_created += 1
+                    self._active_temp_connections += 1
+                    is_temp_connection = True
+
+            if is_temp_connection:
+                now = time.time()
+                # Rate-limit exhaustion warnings (max once per 10 seconds)
+                if now - self._last_exhaustion_warning >= 10.0:
+                    self._last_exhaustion_warning = now
+                    logger.warning(
+                        f"⚠️ Connection pool exhausted! "
+                        f"Total exhaustions: {self._exhaustion_count}, "
+                        f"Active temp connections: {self._active_temp_connections}/{self.MAX_TEMP_CONNECTIONS}. "
+                        f"Consider increasing PROJECT_MEMORY_POOL_SIZE (current: {self.pool_size})"
+                    )
+
+                # Create temporary connection with proper cleanup on failure
+                try:
+                    conn = self._create_connection()
+                except Exception as e:
+                    with self._temp_conn_lock:
+                        self._active_temp_connections -= 1
+                    logger.error(f"Failed to create temporary connection: {e}")
+                    raise RuntimeError(
+                        f"Failed to create temporary database connection: {e}"
+                    ) from e
+
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+                    with self._temp_conn_lock:
+                        self._active_temp_connections -= 1
+                    conn = None
+                return
+
+            # Pool empty and temp connections maxed - enter wait queue
+            with self._waiting_lock:
+                if self._waiting_count >= self.MAX_WAIT_QUEUE_SIZE:
                     logger.error(
-                        f"Connection pool exhausted and temp connection limit "
-                        f"({self.MAX_TEMP_CONNECTIONS}) reached. "
-                        f"Rejecting request to prevent resource exhaustion."
+                        f"Connection pool exhausted, temp connections maxed ({self.MAX_TEMP_CONNECTIONS}), "
+                        f"and wait queue full ({self.MAX_WAIT_QUEUE_SIZE}). Rejecting request."
                     )
                     raise RuntimeError(
                         f"Database connection pool exhausted. "
-                        f"Max temporary connections ({self.MAX_TEMP_CONNECTIONS}) reached. "
+                        f"Max temporary connections ({self.MAX_TEMP_CONNECTIONS}) and "
+                        f"max wait queue ({self.MAX_WAIT_QUEUE_SIZE}) reached. "
                         f"Please retry later or increase PROJECT_MEMORY_POOL_SIZE."
                     )
 
-                # Track and create temporary connection
-                self._exhaustion_count += 1
-                self._temp_connections_created += 1
-                self._active_temp_connections += 1
-                is_temp_connection = True
+                self._waiting_count += 1
+                logger.debug(f"Request entering wait queue (waiting: {self._waiting_count})")
 
-            now = time.time()
+            try:
+                # Wait for a connection to become available
+                start_time = time.time()
+                remaining_timeout = self.WAIT_QUEUE_TIMEOUT
 
-            # Rate-limit exhaustion warnings (max once per 10 seconds)
-            if now - self._last_exhaustion_warning >= 10.0:
-                self._last_exhaustion_warning = now
-                logger.warning(
-                    f"⚠️ Connection pool exhausted! "
-                    f"Total exhaustions: {self._exhaustion_count}, "
-                    f"Active temp connections: {self._active_temp_connections}/{self.MAX_TEMP_CONNECTIONS}. "
-                    f"Consider increasing PROJECT_MEMORY_POOL_SIZE (current: {self.pool_size})"
+                while remaining_timeout > 0:
+                    # Try to get a connection
+                    try:
+                        conn = self._pool.get(timeout=min(remaining_timeout, 1.0))
+                        yield conn
+                        return
+                    except Empty:
+                        # Check if we can now create a temp connection
+                        with self._temp_conn_lock:
+                            if self._active_temp_connections < self.MAX_TEMP_CONNECTIONS:
+                                self._exhaustion_count += 1
+                                self._temp_connections_created += 1
+                                self._active_temp_connections += 1
+                                is_temp_connection = True
+
+                        if is_temp_connection:
+                            try:
+                                conn = self._create_connection()
+                            except Exception as e:
+                                with self._temp_conn_lock:
+                                    self._active_temp_connections -= 1
+                                raise RuntimeError(f"Failed to create temp connection: {e}") from e
+
+                            try:
+                                yield conn
+                            finally:
+                                conn.close()
+                                with self._temp_conn_lock:
+                                    self._active_temp_connections -= 1
+                                conn = None
+                            return
+
+                        # Update remaining timeout
+                        elapsed = time.time() - start_time
+                        remaining_timeout = self.WAIT_QUEUE_TIMEOUT - elapsed
+
+                # Timeout expired
+                logger.error(
+                    f"Connection wait timeout ({self.WAIT_QUEUE_TIMEOUT}s) expired. "
+                    f"Pool size: {self.pool_size}, temp connections: {self._active_temp_connections}"
                 )
-
-            # Create temporary connection with proper cleanup on failure
-            # This ensures _active_temp_connections is decremented if creation fails
-            try:
-                conn = self._create_connection()
-            except Exception as e:
-                # Connection creation failed - decrement counter to prevent leak
-                with self._temp_conn_lock:
-                    self._active_temp_connections -= 1
-                logger.error(f"Failed to create temporary connection: {e}")
                 raise RuntimeError(
-                    f"Failed to create temporary database connection: {e}"
-                ) from e
-
-            try:
-                yield conn
+                    f"Timed out waiting for database connection after {self.WAIT_QUEUE_TIMEOUT}s. "
+                    f"Please retry later or increase PROJECT_MEMORY_POOL_SIZE."
+                )
             finally:
-                conn.close()
-                with self._temp_conn_lock:
-                    self._active_temp_connections -= 1
-                conn = None
+                with self._waiting_lock:
+                    self._waiting_count -= 1
+
         finally:
             if conn is not None and not is_temp_connection:
-                try:
-                    self._pool.put_nowait(conn)
-                except Exception:
-                    conn.close()
+                self._return_connection(conn)
 
     def get_pool_stats(self) -> dict:
         """Get connection pool statistics for monitoring."""
@@ -681,24 +793,42 @@ PERSIST_RATE_LIMIT = os.environ.get("PROJECT_MEMORY_PERSIST_RATE_LIMIT", "false"
 
 
 def create_rate_limiter() -> RateLimiter:
-    """Create the appropriate rate limiter based on configuration."""
+    """Create the appropriate rate limiter based on configuration.
+
+    Falls back to in-memory rate limiter if persistent limiter fails to initialize.
+    This ensures the server can always start, even with configuration issues.
+    """
     if PERSIST_RATE_LIMIT:
-        db_path = get_db_path()
-        logger.info(f"Using persistent rate limiter with database: {db_path}")
-        return PersistentRateLimiter(db_path, max_ops=RATE_LIMIT, window_seconds=60)
+        try:
+            db_path = get_db_path()
+            logger.info(f"Using persistent rate limiter with database: {db_path}")
+            return PersistentRateLimiter(db_path, max_ops=RATE_LIMIT, window_seconds=60)
+        except Exception as e:
+            # Fall back to in-memory rate limiter if persistent fails
+            logger.warning(
+                f"Failed to initialize persistent rate limiter: {e}. "
+                f"Falling back to in-memory rate limiter. "
+                f"Rate limits will reset on server restart."
+            )
+            return RateLimiter(max_ops=RATE_LIMIT, window_seconds=60)
     else:
         return RateLimiter(max_ops=RATE_LIMIT, window_seconds=60)
 
 
 # Global rate limiter (lazily initialized to ensure db_path is available)
+# Thread-safe initialization with lock to prevent race conditions
+_rate_limiter_lock = threading.Lock()
 rate_limiter: Optional[RateLimiter] = None
 
 
 def get_rate_limiter() -> RateLimiter:
-    """Get or create the global rate limiter."""
+    """Get or create the global rate limiter (thread-safe)."""
     global rate_limiter
     if rate_limiter is None:
-        rate_limiter = create_rate_limiter()
+        with _rate_limiter_lock:
+            # Double-check pattern to avoid creating multiple rate limiters
+            if rate_limiter is None:
+                rate_limiter = create_rate_limiter()
     return rate_limiter
 
 
@@ -1787,20 +1917,20 @@ async def call_tool(name: str, arguments: dict) -> list:
                          f"⏱️ Token expires in {int(ttl)} seconds."
                 )]
 
-            # Step 2: Validate the provided token
-            if not validate_and_clear_purge_token(confirm):
-                # Check if there's a pending token
-                pending = get_pending_purge_token()
-                if pending:
-                    token, remaining = pending
+            # Step 2: Validate the provided token (atomic operation to prevent race conditions)
+            success, expected_token, remaining = validate_and_clear_purge_token(confirm)
+            if not success:
+                if expected_token:
+                    # Token doesn't match - show expected token from atomic lookup
                     return [TextContent(
                         type="text",
                         text=f"❌ Invalid confirmation token.\n\n"
-                             f"Expected: `{token}`\n"
+                             f"Expected: `{expected_token}`\n"
                              f"Received: `{confirm}`\n\n"
                              f"⏱️ Token expires in {int(remaining)} seconds."
                     )]
                 else:
+                    # No pending token or expired
                     return [TextContent(
                         type="text",
                         text="❌ No pending purge request or token expired.\n\n"
