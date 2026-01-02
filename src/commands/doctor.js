@@ -4,11 +4,17 @@
  * Diagnoses common issues and verifies system setup.
  */
 
-import { existsSync, statSync } from 'fs';
-import { join } from 'path';
+import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
+import { join, dirname } from 'path';
 import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import ora from 'ora';
+import { getCacheStats } from '../generators/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PACKAGE_ROOT = join(__dirname, '..', '..');
 
 /**
  * Diagnostic checks to run
@@ -294,6 +300,220 @@ const DIAGNOSTICS = [
           passed: false,
           value: 'Cannot access',
           hint: 'Check file permissions on .tmp/memory.db'
+        };
+      }
+    }
+  },
+  {
+    id: 'cache-status',
+    name: 'Parse cache status',
+    category: 'health',
+    check: async () => {
+      const stats = getCacheStats();
+      const usage = Math.round((stats.size / stats.maxSize) * 100);
+      return {
+        passed: usage < 90,
+        value: `${stats.size}/${stats.maxSize} entries (${usage}% used)`,
+        hint: usage >= 90 ? 'Cache near capacity, may affect performance' : undefined
+      };
+    }
+  },
+  {
+    id: 'tmp-disk-space',
+    name: '.tmp disk space',
+    category: 'health',
+    check: async () => {
+      const cwd = process.cwd();
+      const tmpPath = join(cwd, '.tmp');
+
+      if (!existsSync(tmpPath)) {
+        return {
+          passed: true,
+          value: 'N/A (directory not created)'
+        };
+      }
+
+      try {
+        let totalSize = 0;
+        const countFiles = dir => {
+          const files = readdirSync(dir, { withFileTypes: true });
+          for (const file of files) {
+            const fullPath = join(dir, file.name);
+            if (file.isDirectory()) {
+              countFiles(fullPath);
+            } else {
+              totalSize += statSync(fullPath).size;
+            }
+          }
+        };
+        countFiles(tmpPath);
+
+        const sizeMb = Math.round(totalSize / (1024 * 1024) * 10) / 10;
+        const sizeWarning = sizeMb > 100; // Warn if over 100MB
+
+        return {
+          passed: !sizeWarning,
+          value: sizeMb < 1 ? `${Math.round(totalSize / 1024)} KB` : `${sizeMb} MB`,
+          hint: sizeWarning ? 'Consider cleaning up .tmp directory' : undefined
+        };
+      } catch {
+        return {
+          passed: true,
+          value: 'Unable to calculate'
+        };
+      }
+    }
+  },
+  {
+    id: 'framework-version',
+    name: 'Framework version',
+    category: 'framework',
+    check: async () => {
+      try {
+        const packagePath = join(PACKAGE_ROOT, 'package.json');
+        const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
+        return {
+          passed: true,
+          value: packageJson.version || 'Unknown'
+        };
+      } catch {
+        return {
+          passed: false,
+          value: 'Unable to determine version'
+        };
+      }
+    }
+  },
+  {
+    id: 'duplicate-configs',
+    name: 'No duplicate AI configs',
+    category: 'health',
+    check: async () => {
+      const cwd = process.cwd();
+      const duplicates = [];
+
+      // Check for common duplicates
+      const configPairs = [
+        { old: '.cursorrules', new: '.cursor/rules' },
+        { old: '.windsurfrules', new: '.windsurf/rules' }
+      ];
+
+      for (const pair of configPairs) {
+        const oldExists = existsSync(join(cwd, pair.old));
+        const newExists = existsSync(join(cwd, pair.new));
+
+        if (oldExists && newExists) {
+          duplicates.push(`${pair.old} + ${pair.new}`);
+        }
+      }
+
+      if (duplicates.length > 0) {
+        return {
+          passed: false,
+          value: duplicates.join(', '),
+          hint: 'Remove deprecated config files to avoid conflicts'
+        };
+      }
+
+      return {
+        passed: true,
+        value: 'No duplicates found'
+      };
+    }
+  },
+  {
+    id: 'commands-installed',
+    name: 'Slash commands count',
+    category: 'framework',
+    check: async () => {
+      const cwd = process.cwd();
+      const commandsPath = join(cwd, '.claude', 'commands');
+
+      if (!existsSync(commandsPath)) {
+        return {
+          passed: false,
+          value: '0 commands',
+          hint: 'Run: npx ai-excellence init to install commands'
+        };
+      }
+
+      try {
+        const files = readdirSync(commandsPath).filter(f => f.endsWith('.md'));
+        const count = files.length;
+        return {
+          passed: count >= 6,
+          value: `${count} commands`,
+          hint: count < 6 ? 'Some commands may be missing' : undefined
+        };
+      } catch {
+        return {
+          passed: false,
+          value: 'Unable to read commands directory'
+        };
+      }
+    }
+  },
+  {
+    id: 'agents-installed',
+    name: 'Subagents count',
+    category: 'framework',
+    check: async () => {
+      const cwd = process.cwd();
+      const agentsPath = join(cwd, '.claude', 'agents');
+
+      if (!existsSync(agentsPath)) {
+        return {
+          passed: true,
+          value: '0 agents (optional)',
+          hint: 'Run: npx ai-excellence init --preset full to install agents'
+        };
+      }
+
+      try {
+        const files = readdirSync(agentsPath).filter(f => f.endsWith('.md'));
+        return {
+          passed: true,
+          value: `${files.length} agents`
+        };
+      } catch {
+        return {
+          passed: false,
+          value: 'Unable to read agents directory'
+        };
+      }
+    }
+  },
+  {
+    id: 'gitignore-tmp',
+    name: '.tmp in .gitignore',
+    category: 'health',
+    check: async () => {
+      const cwd = process.cwd();
+      const gitignorePath = join(cwd, '.gitignore');
+
+      if (!existsSync(gitignorePath)) {
+        return {
+          passed: false,
+          value: 'No .gitignore file',
+          hint: 'Create .gitignore and add .tmp/'
+        };
+      }
+
+      try {
+        const content = readFileSync(gitignorePath, 'utf-8');
+        const hasTmp = content.split('\n').some(
+          line => line.trim() === '.tmp' || line.trim() === '.tmp/'
+        );
+
+        return {
+          passed: hasTmp,
+          value: hasTmp ? 'Yes' : 'No',
+          hint: !hasTmp ? 'Add .tmp/ to .gitignore to prevent committing temporary files' : undefined
+        };
+      } catch {
+        return {
+          passed: false,
+          value: 'Unable to read .gitignore'
         };
       }
     }
