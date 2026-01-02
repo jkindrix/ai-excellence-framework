@@ -105,18 +105,35 @@ const UPDATABLE_COMPONENTS = [
 
 /**
  * Main update command handler
+ *
+ * @param {object} options - Command options
+ * @param {boolean} [options.check=false] - Check for updates without installing
+ * @param {boolean} [options.force=false] - Force update even if no changes detected
+ * @param {boolean} [options.verbose=false] - Show detailed update progress
+ * @param {boolean} [options.json=false] - Output results as JSON
  */
 export async function updateCommand(options) {
   const cwd = process.cwd();
+  const jsonOutput = options.json === true;
 
-  console.log(chalk.cyan('\n  AI Excellence Framework Updater\n'));
+  // Helper to log only when not in JSON mode
+  const log = (...args) => {
+    if (!jsonOutput) {
+      console.log(...args);
+    }
+  };
+
+  log(chalk.cyan('\n  AI Excellence Framework Updater\n'));
 
   if (options.check) {
-    await checkForUpdates(cwd);
+    await checkForUpdates(cwd, jsonOutput);
     return;
   }
 
-  const spinner = ora('Checking for updates...').start();
+  // Disable spinner in JSON mode
+  const spinner = jsonOutput
+    ? { text: '', start: () => spinner, stop: () => {}, succeed: () => {} }
+    : ora('Checking for updates...').start();
 
   const updates = {
     available: [],
@@ -161,23 +178,46 @@ export async function updateCommand(options) {
   spinner.stop();
 
   if (updates.available.length === 0) {
-    console.log(chalk.green('  ✓ All components are up to date!\n'));
+    if (jsonOutput) {
+      console.log(JSON.stringify({ upToDate: true, updates }, null, 2));
+    } else {
+      log(chalk.green('  ✓ All components are up to date!\n'));
+    }
     return;
   }
 
-  console.log(chalk.yellow(`  Found ${updates.available.length} updates available:\n`));
+  log(chalk.yellow(`  Found ${updates.available.length} updates available:\n`));
   updates.available.forEach(u => {
-    console.log(chalk.gray(`    - ${u.file} (${u.component})`));
+    log(chalk.gray(`    - ${u.file} (${u.component})`));
   });
-  console.log('');
+  log('');
 
   if (!options.force) {
-    console.log(chalk.gray('  Run with --force to apply updates.\n'));
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify(
+          {
+            upToDate: false,
+            updatesAvailable: updates.available.map(u => ({
+              component: u.component,
+              file: u.file
+            })),
+            message: 'Run with --force to apply updates'
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      log(chalk.gray('  Run with --force to apply updates.\n'));
+    }
     return;
   }
 
   // Apply updates
-  const updateSpinner = ora('Applying updates...').start();
+  const updateSpinner = jsonOutput
+    ? { text: '', start: () => updateSpinner, stop: () => {}, succeed: () => {} }
+    : ora('Applying updates...').start();
 
   for (const update of updates.available) {
     try {
@@ -193,31 +233,51 @@ export async function updateCommand(options) {
 
   updateSpinner.succeed('Updates applied!');
 
-  // Print results
-  if (updates.updated.length > 0) {
-    console.log(chalk.green(`\n  Updated ${updates.updated.length} files:`));
-    updates.updated.forEach(u => {
-      console.log(chalk.gray(`    ✓ ${u.file}`));
-    });
-  }
+  // Output results
+  if (jsonOutput) {
+    console.log(
+      JSON.stringify(
+        {
+          success: updates.errors.length === 0,
+          updated: updates.updated.map(u => ({ component: u.component, file: u.file })),
+          errors: updates.errors
+        },
+        null,
+        2
+      )
+    );
+  } else {
+    if (updates.updated.length > 0) {
+      log(chalk.green(`\n  Updated ${updates.updated.length} files:`));
+      updates.updated.forEach(u => {
+        log(chalk.gray(`    ✓ ${u.file}`));
+      });
+    }
 
-  if (updates.errors.length > 0) {
-    console.log(chalk.red('\n  Errors:'));
-    updates.errors.forEach(e => {
-      console.log(chalk.red(`    ✗ ${e.file}: ${e.error}`));
-    });
-  }
+    if (updates.errors.length > 0) {
+      log(chalk.red('\n  Errors:'));
+      updates.errors.forEach(e => {
+        log(chalk.red(`    ✗ ${e.file}: ${e.error}`));
+      });
+    }
 
-  console.log('');
+    log('');
+  }
 }
 
 /**
  * Check for available updates without applying
+ *
+ * @param {string} cwd - Current working directory
+ * @param {boolean} [jsonOutput=false] - Output results as JSON
  */
-async function checkForUpdates(cwd) {
-  const spinner = ora('Checking for updates...').start();
+async function checkForUpdates(cwd, jsonOutput = false) {
+  const spinner = jsonOutput
+    ? { start: () => spinner, stop: () => {} }
+    : ora('Checking for updates...').start();
 
   let updatesAvailable = 0;
+  const updatableFiles = [];
 
   for (const component of UPDATABLE_COMPONENTS) {
     for (const file of component.files) {
@@ -233,13 +293,26 @@ async function checkForUpdates(cwd) {
 
       if (sourceContent !== targetContent) {
         updatesAvailable++;
+        updatableFiles.push({ component: component.name, file: file.target });
       }
     }
   }
 
   spinner.stop();
 
-  if (updatesAvailable === 0) {
+  if (jsonOutput) {
+    console.log(
+      JSON.stringify(
+        {
+          upToDate: updatesAvailable === 0,
+          updatesAvailable,
+          files: updatableFiles
+        },
+        null,
+        2
+      )
+    );
+  } else if (updatesAvailable === 0) {
     console.log(chalk.green('  ✓ All components are up to date!\n'));
   } else {
     console.log(

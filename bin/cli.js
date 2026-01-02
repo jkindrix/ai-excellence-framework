@@ -13,6 +13,10 @@
  *   npx ai-excellence-framework generate
  *   npx ai-excellence-framework lint
  *   npx ai-excellence-framework uninstall
+ *
+ * Configuration:
+ *   AIX_TIMEOUT       - Command timeout in milliseconds (default: 300000 = 5 minutes)
+ *   AIX_DEBUG         - Enable debug output (default: false)
  */
 
 import { Command } from 'commander';
@@ -33,6 +37,52 @@ import { detectCommand } from '../src/commands/detect.js';
 
 // Import error handling
 import { FrameworkError, createError, getExitCode } from '../src/errors.js';
+
+// Configuration from environment
+const DEFAULT_TIMEOUT = 300000; // 5 minutes
+const COMMAND_TIMEOUT = parseInt(process.env.AIX_TIMEOUT || String(DEFAULT_TIMEOUT), 10);
+const DEBUG_MODE = process.env.AIX_DEBUG === 'true';
+
+/**
+ * Wrap a command handler with timeout support.
+ * If the command takes longer than the configured timeout, it will be aborted.
+ *
+ * @param {Function} handler - Command handler function
+ * @param {string} commandName - Name of the command for error messages
+ * @returns {Function} Wrapped handler with timeout
+ */
+function withTimeout(handler, commandName) {
+  return async function (...args) {
+    const timeoutMs = COMMAND_TIMEOUT;
+
+    if (DEBUG_MODE) {
+      console.log(chalk.gray(`[DEBUG] Starting ${commandName} with timeout: ${timeoutMs}ms`));
+    }
+
+    let timerId = null;
+
+    const timeoutPromise = new Promise((_, reject) => {
+      timerId = setTimeout(() => {
+        reject(
+          createError(
+            'AIX-GEN-901',
+            `Command '${commandName}' timed out after ${timeoutMs}ms. Set AIX_TIMEOUT environment variable to increase the timeout.`,
+            { context: { command: commandName, timeout: timeoutMs } }
+          )
+        );
+      }, timeoutMs);
+    });
+
+    try {
+      const result = await Promise.race([handler.apply(this, args), timeoutPromise]);
+      clearTimeout(timerId);
+      return result;
+    } catch (error) {
+      clearTimeout(timerId);
+      throw error;
+    }
+  };
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -83,7 +133,7 @@ function sanitizeForDisplay(input, maxLength = 50) {
 
   // Truncate if too long
   if (sanitized.length > maxLength) {
-    sanitized = sanitized.slice(0, maxLength) + '...';
+    sanitized = `${sanitized.slice(0, maxLength)}...`;
   }
 
   return sanitized;
@@ -113,7 +163,8 @@ program
   .option('--no-hooks', 'Skip pre-commit hooks installation')
   .option('--no-mcp', 'Skip MCP server setup')
   .option('--verbose', 'Show detailed installation progress', false)
-  .action(initCommand);
+  .option('--json', 'Output results as JSON', false)
+  .action(withTimeout(initCommand, 'init'));
 
 // Validate command
 program
@@ -122,7 +173,7 @@ program
   .option('--fix', 'Attempt to fix issues automatically', false)
   .option('--json', 'Output results as JSON', false)
   .option('--verbose', 'Show detailed validation output', false)
-  .action(validateCommand);
+  .action(withTimeout(validateCommand, 'validate'));
 
 // Update command
 program
@@ -131,7 +182,8 @@ program
   .option('--check', 'Check for updates without installing', false)
   .option('-f, --force', 'Force update even if no changes detected', false)
   .option('--verbose', 'Show detailed update progress', false)
-  .action(updateCommand);
+  .option('--json', 'Output results as JSON', false)
+  .action(withTimeout(updateCommand, 'update'));
 
 // Doctor command
 program
@@ -139,7 +191,7 @@ program
   .description('Diagnose common issues and verify setup')
   .option('--verbose', 'Show detailed diagnostic information', false)
   .option('--json', 'Output results as JSON', false)
-  .action(doctorCommand);
+  .action(withTimeout(doctorCommand, 'doctor'));
 
 // Generate command (multi-tool support)
 program
@@ -151,7 +203,7 @@ program
   .option('--dry-run', 'Show what would be created without making changes', false)
   .option('--json', 'Output results as JSON', false)
   .option('--verbose', 'Show detailed generation output', false)
-  .action(generateCommand);
+  .action(withTimeout(generateCommand, 'generate'));
 
 // Lint command (configuration validation)
 program
@@ -160,7 +212,7 @@ program
   .option('--verbose', 'Show all findings including suggestions', false)
   .option('--only <files>', 'Only check specific files (comma-separated)', '')
   .option('--ignore-errors', 'Exit 0 even with errors', false)
-  .action(lintCommand);
+  .action(withTimeout(lintCommand, 'lint'));
 
 // Uninstall command
 program
@@ -171,7 +223,7 @@ program
   .option('--keep-config', 'Preserve CLAUDE.md file', false)
   .option('--json', 'Output results as JSON', false)
   .option('--verbose', 'Show detailed removal progress', false)
-  .action(uninstall);
+  .action(withTimeout(uninstall, 'uninstall'));
 
 // Detect command
 program
@@ -179,7 +231,7 @@ program
   .description('Detect which AI coding tools are configured in this project')
   .option('--verbose', 'Show detailed information including unconfigured tools', false)
   .option('--json', 'Output results as JSON', false)
-  .action(detectCommand);
+  .action(withTimeout(detectCommand, 'detect'));
 
 // Error handling
 program.exitOverride(err => {

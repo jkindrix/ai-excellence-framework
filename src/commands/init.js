@@ -61,24 +61,33 @@ const PRESETS = Object.fromEntries(
  * @param {boolean} [options.force=false] - Overwrite existing files
  * @param {boolean} [options.dryRun=false] - Show what would be created without creating
  * @param {boolean} [options.verbose=false] - Show detailed output
+ * @param {boolean} [options.json=false] - Output results as JSON
  * @returns {Promise<void>} Resolves when initialization is complete
  * @throws {FrameworkError} If initialization fails
  */
 export async function initCommand(options) {
   const cwd = process.cwd();
+  const jsonOutput = options.json === true;
 
-  console.log(chalk.cyan('\n  AI Excellence Framework Installer\n'));
+  // Helper to log only when not in JSON mode
+  const log = (...args) => {
+    if (!jsonOutput) {
+      console.log(...args);
+    }
+  };
+
+  log(chalk.cyan('\n  AI Excellence Framework Installer\n'));
 
   // Dry run mode
   if (options.dryRun) {
-    console.log(chalk.yellow('  Running in dry-run mode. No files will be created.\n'));
+    log(chalk.yellow('  Running in dry-run mode. No files will be created.\n'));
   }
 
   // Get configuration
   let config;
-  if (options.yes) {
+  if (options.yes || jsonOutput) {
     config = PRESETS[options.preset];
-    console.log(chalk.gray(`  Using preset: ${config.name}\n`));
+    log(chalk.gray(`  Using preset: ${config.name}\n`));
   } else {
     config = await promptConfiguration(options.preset);
   }
@@ -86,10 +95,10 @@ export async function initCommand(options) {
   // Check for existing installation
   const existingFiles = checkExistingFiles(cwd);
   if (existingFiles.length > 0 && !options.force) {
-    console.log(chalk.yellow('\n  Existing AI Excellence Framework files detected:'));
-    existingFiles.forEach(f => console.log(chalk.gray(`    - ${f}`)));
+    log(chalk.yellow('\n  Existing AI Excellence Framework files detected:'));
+    existingFiles.forEach(f => log(chalk.gray(`    - ${f}`)));
 
-    if (!options.yes) {
+    if (!options.yes && !jsonOutput) {
       const { proceed } = await enquirer.prompt({
         type: 'confirm',
         name: 'proceed',
@@ -98,17 +107,26 @@ export async function initCommand(options) {
       });
 
       if (!proceed) {
-        console.log(chalk.gray('\n  Installation cancelled.\n'));
+        log(chalk.gray('\n  Installation cancelled.\n'));
+        if (jsonOutput) {
+          console.log(JSON.stringify({ success: false, cancelled: true, existingFiles }, null, 2));
+        }
         return;
       }
-    } else {
-      console.log(chalk.gray('\n  Use --force to overwrite.\n'));
+    } else if (!options.force) {
+      log(chalk.gray('\n  Use --force to overwrite.\n'));
+      if (jsonOutput) {
+        console.log(JSON.stringify({ success: false, existingFiles, error: 'Use --force to overwrite' }, null, 2));
+      }
       return;
     }
   }
 
   // Install components
-  const spinner = ora('Installing AI Excellence Framework...').start();
+  // Disable spinner in JSON mode for clean output
+  const spinner = jsonOutput
+    ? { text: '', start: () => spinner, succeed: () => {}, fail: () => {} }
+    : ora('Installing AI Excellence Framework...').start();
 
   try {
     const results = {
@@ -175,13 +193,32 @@ export async function initCommand(options) {
 
     spinner.succeed('AI Excellence Framework installed successfully!');
 
-    // Print results
-    printResults(results, options.dryRun);
-
-    // Print next steps
-    printNextSteps(config);
+    // Output results
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify(
+          {
+            success: true,
+            dryRun: options.dryRun,
+            preset: options.preset,
+            results
+          },
+          null,
+          2
+        )
+      );
+    } else {
+      printResults(results, options.dryRun);
+      printNextSteps(config);
+    }
   } catch (error) {
     spinner.fail('Installation failed');
+
+    // Output JSON error if in JSON mode
+    if (jsonOutput) {
+      const errObj = error instanceof FrameworkError ? error.toJSON() : { message: error.message };
+      console.log(JSON.stringify({ success: false, error: errObj }, null, 2));
+    }
 
     // Re-throw if already a FrameworkError
     if (error instanceof FrameworkError) {
@@ -509,8 +546,7 @@ async function installPreCommit(cwd, dryRun, results) {
 
     if (!validation.valid) {
       console.warn(
-        `Warning: Pre-commit template has potential issues:\n` +
-          validation.errors.map(e => `  - ${e}`).join('\n')
+        `Warning: Pre-commit template has potential issues:\n${validation.errors.map(e => `  - ${e}`).join('\n')}`
       );
       // Still proceed with copy but warn the user
     }
