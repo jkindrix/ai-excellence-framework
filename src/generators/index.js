@@ -23,7 +23,9 @@ export {
   extractSecurityChecklist,
   getProjectName,
   formatTechStack,
-  printResults
+  printResults,
+  clearParseCache,
+  getCacheStats
 } from './base.js';
 
 // Re-export modular generators

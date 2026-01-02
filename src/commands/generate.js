@@ -39,17 +39,16 @@
  * @see https://docs.aws.amazon.com/amazonq - Amazon Q Developer
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import ora from 'ora';
 import { createError, FrameworkError } from '../errors.js';
 
-// Import modular generators (available for future use)
-// The modular structure is established in src/generators/ for incremental migration
-// Currently using local implementations for stability; switch to modular imports when ready:
-// import { parseProjectContext, printResults, generateAgentsMd, ... } from '../generators/index.js';
+// Import shared utilities from generators module
+import { parseProjectContext } from '../generators/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -142,7 +141,8 @@ export async function generateCommand(options) {
 
   if (existsSync(claudeMdPath)) {
     console.log(chalk.gray('  Using CLAUDE.md as source of truth\n'));
-    projectContext = parseProjectContext(readFileSync(claudeMdPath, 'utf-8'));
+    const claudeMdContent = await readFile(claudeMdPath, 'utf-8');
+    projectContext = parseProjectContext(claudeMdContent);
   } else if (!options.force) {
     console.log(chalk.yellow('  No CLAUDE.md found. Run "aix init" first or use --force.\n'));
     return;
@@ -259,114 +259,6 @@ export async function generateCommand(options) {
     // Wrap and throw (CLI will handle exit code)
     throw createError('AIX-GEN-900', error.message, { cause: error });
   }
-}
-
-/**
- * Parse CLAUDE.md into structured project context
- * Note: Also available in modular form at ../generators/base.js
- */
-function parseProjectContext(content) {
-  const context = {
-    projectName: '',
-    overview: '',
-    techStack: [],
-    architecture: '',
-    conventions: '',
-    commands: '',
-    currentState: '',
-    sessionInstructions: '',
-    securityChecklist: '',
-    raw: content
-  };
-
-  // Extract project name from first heading
-  const nameMatch = content.match(/^#\s+(?:Project:\s*)?(.+)$/m);
-  if (nameMatch) {
-    context.projectName = nameMatch[1].trim();
-  }
-
-  // Extract sections
-  const sections = extractSections(content);
-
-  context.overview = sections.Overview || '';
-  context.techStack = extractTechStack(sections['Tech Stack'] || '');
-  context.architecture = sections.Architecture || '';
-  context.conventions = sections.Conventions || '';
-  context.commands = sections['Common Commands'] || '';
-  context.currentState = sections['Current State'] || '';
-  context.sessionInstructions = sections['Session Instructions'] || '';
-  context.securityChecklist = extractSecurityChecklist(content);
-
-  return context;
-}
-
-/**
- * Extract sections from markdown
- */
-function extractSections(content) {
-  const sections = {};
-  const lines = content.split('\n');
-  let currentSection = null;
-  let currentContent = [];
-
-  for (const line of lines) {
-    const match = line.match(/^##\s+(.+)$/);
-    if (match) {
-      if (currentSection) {
-        sections[currentSection] = currentContent.join('\n').trim();
-      }
-      currentSection = match[1];
-      currentContent = [];
-    } else if (currentSection) {
-      currentContent.push(line);
-    }
-  }
-
-  if (currentSection) {
-    sections[currentSection] = currentContent.join('\n').trim();
-  }
-
-  return sections;
-}
-
-/**
- * Extract tech stack as array
- */
-function extractTechStack(content) {
-  const stack = [];
-  const lines = content.split('\n');
-
-  for (const line of lines) {
-    const match = line.match(/^-\s*\*?\*?(.+?)\*?\*?:\s*(.+)$/);
-    if (match) {
-      stack.push({
-        category: match[1].trim(),
-        value: match[2].trim()
-      });
-    }
-  }
-
-  return stack;
-}
-
-/**
- * Extract security checklist items
- */
-function extractSecurityChecklist(content) {
-  const items = [];
-  const checklistMatch = content.match(/### Security Checklist[\s\S]*?((?:\n- \[.\].+)+)/);
-
-  if (checklistMatch) {
-    const lines = checklistMatch[1].split('\n');
-    for (const line of lines) {
-      const itemMatch = line.match(/- \[.\]\s*(.+)/);
-      if (itemMatch) {
-        items.push(itemMatch[1].trim());
-      }
-    }
-  }
-
-  return items;
 }
 
 /**

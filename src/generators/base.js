@@ -11,12 +11,13 @@ import chalk from 'chalk';
 /**
  * Simple cache for parsed CLAUDE.md content.
  * Uses content hash as key to detect changes.
- * @type {Map<string, {context: object, timestamp: number}>}
+ * @type {Map<string, {context: object, timestamp: number, lastAccess: number}>}
  */
 const parseCache = new Map();
 
-// Cache TTL: 5 minutes (in case file changes during long sessions)
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Cache configuration
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
+const CACHE_MAX_SIZE = 50; // Maximum cached entries
 
 /**
  * Get content hash for cache key
@@ -28,6 +29,71 @@ function getContentHash(content) {
 }
 
 /**
+ * Remove expired entries from cache.
+ * Called automatically when cache grows too large.
+ */
+function cleanupExpiredEntries() {
+  const now = Date.now();
+  const expiredKeys = [];
+
+  for (const [key, entry] of parseCache.entries()) {
+    if (now - entry.timestamp >= CACHE_TTL_MS) {
+      expiredKeys.push(key);
+    }
+  }
+
+  for (const key of expiredKeys) {
+    parseCache.delete(key);
+  }
+
+  return expiredKeys.length;
+}
+
+/**
+ * Enforce cache size limit using LRU eviction.
+ * Removes least recently accessed entries.
+ */
+function enforceCacheSizeLimit() {
+  if (parseCache.size <= CACHE_MAX_SIZE) {
+    return;
+  }
+
+  // First, try removing expired entries
+  cleanupExpiredEntries();
+
+  // If still over limit, remove least recently accessed
+  if (parseCache.size > CACHE_MAX_SIZE) {
+    const entries = [...parseCache.entries()];
+    entries.sort((a, b) => a[1].lastAccess - b[1].lastAccess);
+
+    const toRemove = parseCache.size - CACHE_MAX_SIZE;
+    for (let i = 0; i < toRemove && i < entries.length; i++) {
+      parseCache.delete(entries[i][0]);
+    }
+  }
+}
+
+/**
+ * Clear the parse cache.
+ * Useful for testing or when CLAUDE.md is known to have changed.
+ */
+export function clearParseCache() {
+  parseCache.clear();
+}
+
+/**
+ * Get cache statistics for diagnostics.
+ * @returns {{size: number, maxSize: number, ttlMs: number}}
+ */
+export function getCacheStats() {
+  return {
+    size: parseCache.size,
+    maxSize: CACHE_MAX_SIZE,
+    ttlMs: CACHE_TTL_MS
+  };
+}
+
+/**
  * Parse CLAUDE.md into structured project context.
  * Results are cached based on content hash for performance.
  *
@@ -36,15 +102,25 @@ function getContentHash(content) {
  * @returns {object} Parsed project context
  */
 export function parseProjectContext(content, skipCache = false) {
+  const now = Date.now();
+
   // Check cache first
   if (!skipCache) {
     const hash = getContentHash(content);
     const cached = parseCache.get(hash);
 
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      return cached.context;
+    if (cached) {
+      // Check if entry is still valid
+      if (now - cached.timestamp < CACHE_TTL_MS) {
+        // Update last access time for LRU tracking
+        cached.lastAccess = now;
+        return cached.context;
+      }
+      // Entry expired, remove it
+      parseCache.delete(hash);
     }
   }
+
   const context = {
     projectName: '',
     overview: '',
@@ -81,14 +157,12 @@ export function parseProjectContext(content, skipCache = false) {
     const hash = getContentHash(content);
     parseCache.set(hash, {
       context,
-      timestamp: Date.now()
+      timestamp: now,
+      lastAccess: now
     });
 
-    // Clean up old entries (simple LRU-like cleanup)
-    if (parseCache.size > 100) {
-      const oldestKey = parseCache.keys().next().value;
-      parseCache.delete(oldestKey);
-    }
+    // Enforce cache size limits with proper LRU eviction
+    enforceCacheSizeLimit();
   }
 
   return context;
