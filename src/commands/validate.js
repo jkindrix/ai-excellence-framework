@@ -10,6 +10,8 @@ import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import ora from 'ora';
 import fse from 'fs-extra';
+import { detectSecrets } from '../index.js';
+import { createError } from '../errors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -372,17 +374,9 @@ Thumbs.db
         return true;
       }
       const content = readFileSync(path, 'utf-8');
-      const patterns = [
-        /password\s*[:=]\s*["'][^"']{8,}["']/i,
-        /api[_-]?key\s*[:=]\s*["'][^"']{16,}["']/i,
-        /secret\s*[:=]\s*["'][^"']{8,}["']/i,
-        /-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----/,
-        /sk-[a-zA-Z0-9]{32,}/,
-        /ghp_[a-zA-Z0-9]{36}/,
-        /gho_[a-zA-Z0-9]{36}/,
-        /glpat-[a-zA-Z0-9-]{20}/
-      ];
-      return !patterns.some(p => p.test(content));
+      // Use comprehensive detectSecrets from index.js for consistency
+      const result = detectSecrets(content);
+      return result.clean;
     },
     fix: null, // Cannot auto-fix secrets - requires manual intervention
     severity: 'error'
@@ -402,6 +396,12 @@ Thumbs.db
 
 /**
  * Main validate command handler
+ *
+ * @param {object} options - Command options
+ * @param {boolean} [options.fix=false] - Automatically fix issues where possible
+ * @param {boolean} [options.json=false] - Output results as JSON
+ * @returns {Promise<void>} Resolves when validation is complete
+ * @throws {FrameworkError} If validation fails with errors
  */
 export async function validateCommand(options) {
   const cwd = process.cwd();
@@ -443,8 +443,11 @@ export async function validateCommand(options) {
               results.fixed.push(rule);
             }
           }
-        } catch {
-          // Fix failed, continue with original result
+        } catch (fixError) {
+          // Log fix failure for debugging, continue with original result
+          if (process.env.DEBUG || process.env.VERBOSE) {
+            console.error(`  Auto-fix failed for ${rule.id}: ${fixError.message}`);
+          }
         }
       }
 
@@ -491,7 +494,7 @@ export async function validateCommand(options) {
     };
     console.log(JSON.stringify(jsonOutput, null, 2));
     if (results.errors.length > 0) {
-      process.exit(1);
+      throw createError('AIX-VALID-200', `Validation failed with ${results.errors.length} error(s)`);
     }
     return;
   }
@@ -499,9 +502,9 @@ export async function validateCommand(options) {
   // Print results
   printValidationResults(results, autoFix);
 
-  // Return appropriate exit code
+  // Throw error if validation failed (CLI will handle exit code)
   if (results.errors.length > 0) {
-    process.exit(1);
+    throw createError('AIX-VALID-200', `Validation failed with ${results.errors.length} error(s)`);
   }
 }
 

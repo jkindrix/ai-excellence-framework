@@ -33,6 +33,7 @@ VERSION = "1.1.0"
 import json
 import logging
 import os
+import random
 import re
 import sqlite3
 import sys
@@ -80,6 +81,10 @@ class ConnectionPool:
         self._pool: Queue = Queue(maxsize=pool_size)
         self._lock = threading.Lock()
         self._initialized = False
+        # Pool health tracking
+        self._exhaustion_count = 0
+        self._last_exhaustion_warning = 0.0
+        self._temp_connections_created = 0
 
     def _create_connection(self) -> sqlite3.Connection:
         """Create a new database connection with optimal settings."""
@@ -117,8 +122,22 @@ class ConnectionPool:
             conn = self._pool.get(timeout=30.0)
             yield conn
         except Empty:
-            # Pool exhausted, create temporary connection
-            logger.warning("Connection pool exhausted, creating temporary connection")
+            # Pool exhausted - track and alert
+            self._exhaustion_count += 1
+            self._temp_connections_created += 1
+            now = time.time()
+
+            # Rate-limit exhaustion warnings (max once per 10 seconds)
+            if now - self._last_exhaustion_warning >= 10.0:
+                self._last_exhaustion_warning = now
+                logger.warning(
+                    f"⚠️ Connection pool exhausted! "
+                    f"Total exhaustions: {self._exhaustion_count}, "
+                    f"Temp connections created: {self._temp_connections_created}. "
+                    f"Consider increasing PROJECT_MEMORY_POOL_SIZE (current: {self.pool_size})"
+                )
+
+            # Create temporary connection
             conn = self._create_connection()
             yield conn
             conn.close()
@@ -129,6 +148,16 @@ class ConnectionPool:
                     self._pool.put_nowait(conn)
                 except Exception:
                     conn.close()
+
+    def get_pool_stats(self) -> dict:
+        """Get connection pool statistics for monitoring."""
+        return {
+            "pool_size": self.pool_size,
+            "available": self._pool.qsize() if self._initialized else 0,
+            "exhaustion_count": self._exhaustion_count,
+            "temp_connections_created": self._temp_connections_created,
+            "initialized": self._initialized
+        }
 
     def close_all(self) -> None:
         """Close all connections in the pool."""
@@ -180,9 +209,87 @@ class RateLimiter:
                 self._operations.popleft()
             return max(0, self.max_ops - len(self._operations))
 
+    def configure(self, max_ops: Optional[int] = None, window_seconds: Optional[int] = None) -> dict:
+        """Reconfigure rate limiter at runtime. Returns new configuration."""
+        with self._lock:
+            if max_ops is not None:
+                if max_ops < 1:
+                    raise ValueError("max_ops must be at least 1")
+                self.max_ops = max_ops
+            if window_seconds is not None:
+                if window_seconds < 1:
+                    raise ValueError("window_seconds must be at least 1")
+                self.window_seconds = window_seconds
+
+            logger.info(f"Rate limiter reconfigured: {self.max_ops} ops/{self.window_seconds}s")
+            return self.get_config()
+
+    def get_config(self) -> dict:
+        """Get current rate limiter configuration."""
+        return {
+            "max_ops": self.max_ops,
+            "window_seconds": self.window_seconds,
+            "current_usage": len(self._operations),
+            "remaining": self.remaining()
+        }
+
+    def reset(self) -> None:
+        """Reset the rate limiter, clearing all tracked operations."""
+        with self._lock:
+            self._operations.clear()
+            logger.info("Rate limiter reset")
+
 
 # Global rate limiter
 rate_limiter = RateLimiter(max_ops=RATE_LIMIT, window_seconds=60)
+
+
+def with_retry(
+    max_attempts: int = 3,
+    base_delay: float = 0.1,
+    max_delay: float = 2.0,
+    exponential_base: float = 2.0,
+    retryable_exceptions: tuple = (sqlite3.OperationalError, sqlite3.DatabaseError)
+):
+    """Decorator for retrying database operations with exponential backoff.
+
+    Args:
+        max_attempts: Maximum number of attempts (including initial try)
+        base_delay: Initial delay between retries in seconds
+        max_delay: Maximum delay between retries in seconds
+        exponential_base: Base for exponential backoff calculation
+        retryable_exceptions: Tuple of exception types to retry on
+
+    Returns:
+        Decorated function with retry logic
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except retryable_exceptions as e:
+                    last_exception = e
+                    if attempt < max_attempts - 1:
+                        # Calculate delay with exponential backoff
+                        delay = min(base_delay * (exponential_base ** attempt), max_delay)
+                        # Add jitter (±25%)
+                        jitter = delay * 0.25 * (2 * random.random() - 1)
+                        actual_delay = delay + jitter
+
+                        logger.warning(
+                            f"Transient failure in {func.__name__}: {e}. "
+                            f"Retrying in {actual_delay:.2f}s (attempt {attempt + 1}/{max_attempts})"
+                        )
+                        time.sleep(actual_delay)
+                    else:
+                        logger.error(
+                            f"Max retries ({max_attempts}) exhausted for {func.__name__}: {e}"
+                        )
+            raise last_exception
+        return wrapper
+    return decorator
 
 
 def sanitize_input(value: str, max_length: int = MAX_STRING_LENGTH) -> str:
@@ -203,6 +310,19 @@ def validate_key(key: str) -> bool:
         return False
     # Allow alphanumeric, underscores, hyphens, dots
     return bool(re.match(r'^[\w\-\.]+$', key)) and len(key) <= 100
+
+
+def escape_like_pattern(value: str) -> str:
+    """Escape SQL LIKE wildcard characters to prevent pattern injection.
+
+    SQLite LIKE patterns use % and _ as wildcards. This function escapes
+    these characters so user input is treated literally.
+    """
+    # Escape the escape character first, then the wildcards
+    value = value.replace('\\', '\\\\')
+    value = value.replace('%', '\\%')
+    value = value.replace('_', '\\_')
+    return value
 
 
 class ProjectMemoryDB:
@@ -306,11 +426,16 @@ class ProjectMemoryDB:
             conn.row_factory = sqlite3.Row
             if keyword:
                 keyword = sanitize_input(keyword, 100)
+                # Escape LIKE wildcards to prevent pattern injection
+                escaped_keyword = escape_like_pattern(keyword)
+                pattern = f"%{escaped_keyword}%"
                 cursor = conn.execute("""
                     SELECT * FROM decisions
-                    WHERE decision LIKE ? OR rationale LIKE ? OR context LIKE ?
+                    WHERE decision LIKE ? ESCAPE '\\'
+                       OR rationale LIKE ? ESCAPE '\\'
+                       OR context LIKE ? ESCAPE '\\'
                     ORDER BY timestamp DESC LIMIT ?
-                """, (f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", limit))
+                """, (pattern, pattern, pattern, limit))
             else:
                 cursor = conn.execute("""
                     SELECT * FROM decisions ORDER BY timestamp DESC LIMIT ?
@@ -578,6 +703,18 @@ class ProjectMemoryDB:
             health["status"] = "degraded"
             health["checks"]["capacity"]["warning"] = "Approaching capacity limits"
 
+        # Check connection pool health
+        if self._pool:
+            pool_stats = self._pool.get_pool_stats()
+            health["checks"]["connection_pool"] = pool_stats
+            if pool_stats["exhaustion_count"] > 0:
+                health["checks"]["connection_pool"]["warning"] = (
+                    f"Pool exhausted {pool_stats['exhaustion_count']} times - "
+                    "consider increasing PROJECT_MEMORY_POOL_SIZE"
+                )
+                if health["status"] == "healthy":
+                    health["status"] = "degraded"
+
         health["db_path"] = str(self.db_path)
 
         return health
@@ -624,14 +761,30 @@ def get_db_path() -> Path:
 # Initialize server and database
 server = Server("project-memory")
 db: Optional[ProjectMemoryDB] = None
+_db_lock = threading.Lock()  # Lock for thread-safe db access
 
 
 def get_db() -> ProjectMemoryDB:
-    """Get or initialize the database."""
+    """Get or initialize the database (thread-safe)."""
     global db
     if db is None:
-        db = ProjectMemoryDB(get_db_path())
+        with _db_lock:
+            # Double-check locking pattern
+            if db is None:
+                db = ProjectMemoryDB(get_db_path())
     return db
+
+
+def close_db() -> None:
+    """Close the database connection pool (thread-safe)."""
+    global db
+    with _db_lock:
+        if db is not None and db._pool is not None:
+            try:
+                db._pool.close_all()
+                logger.info("Connection pool closed successfully")
+            except Exception as e:
+                logger.error(f"Error closing connection pool: {e}")
 
 
 @server.list_tools()
@@ -820,6 +973,16 @@ async def list_tools():
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list:
     """Handle tool calls."""
+    # Check rate limit before processing
+    if not rate_limiter.check():
+        remaining = rate_limiter.remaining()
+        logger.warning(f"Rate limit exceeded for tool {name}. Remaining: {remaining}")
+        return [TextContent(
+            type="text",
+            text=f"❌ Rate limit exceeded. Please wait before making more requests. "
+                 f"Limit: {RATE_LIMIT} operations per minute."
+        )]
+
     try:
         database = get_db()
 
@@ -1048,12 +1211,36 @@ async def call_tool(name: str, arguments: dict) -> list:
 
 async def main():
     """Run the MCP server."""
-    logger.info(f"Starting Project Memory MCP Server")
+    logger.info(f"Starting Project Memory MCP Server v{VERSION}")
     logger.info(f"Database: {get_db_path()}")
     logger.info(f"Limits: {MAX_DECISIONS} decisions, {MAX_PATTERNS} patterns, {MAX_CONTEXT_KEYS} context keys")
+    logger.info(f"Rate limit: {RATE_LIMIT} ops/min, Pool size: {POOL_SIZE}")
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream)
+    # Set up graceful shutdown
+    import signal
+
+    def handle_shutdown(signum, frame):
+        """Handle shutdown signals gracefully."""
+        sig_name = signal.Signals(signum).name
+        logger.info(f"Received {sig_name}, initiating graceful shutdown...")
+
+        # Close connection pool using thread-safe function
+        close_db()
+
+        logger.info("Shutdown complete")
+        sys.exit(0)
+
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
+
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream)
+    finally:
+        # Ensure cleanup on normal exit using thread-safe function
+        close_db()
+        logger.info("Server shutdown complete")
 
 
 if __name__ == "__main__":
