@@ -556,11 +556,13 @@ export function parseClaudeMd(content) {
 export const SECRET_PATTERNS = Object.freeze({
   // Generic credential patterns
   // Upper bounds: API keys typically 32-128 chars, passwords/secrets up to 256 chars
+  // Bearer tokens: Most OAuth2 tokens are under 500 chars, ~2KB is HTTP header limit
+  //   @see https://datatracker.ietf.org/doc/html/rfc6750 - Bearer Token Usage
   generic: Object.freeze([
     Object.freeze({ name: 'API Key', pattern: /api[_-]?key\s{0,5}[:=]\s{0,5}["'][^"']{16,256}["']/gi }),
     Object.freeze({ name: 'Password', pattern: /password\s{0,5}[:=]\s{0,5}["'][^"']{8,256}["']/gi }),
     Object.freeze({ name: 'Secret', pattern: /secret\s{0,5}[:=]\s{0,5}["'][^"']{8,256}["']/gi }),
-    Object.freeze({ name: 'Bearer Token', pattern: /bearer\s{1,5}[a-zA-Z0-9_.-]{20,2048}/gi })
+    Object.freeze({ name: 'Bearer Token', pattern: /bearer\s{1,5}[a-zA-Z0-9_.-]{20,500}/gi })
   ]),
 
   // AI/ML API Keys (2024-2025 formats)
@@ -694,9 +696,11 @@ export const SECRET_PATTERNS = Object.freeze({
   //   @see https://jwt.io - JWT structure reference
   //   @see https://www.rfc-editor.org/rfc/rfc7519 - JWT specification
   //   Signature lengths: HS256: 43, RS256: 342, EdDSA: 86-88
+  //   Payload bound: 2000 chars based on industry recommendation (~2KB max)
+  //   @see https://learn.microsoft.com/en-us/answers/questions/1657854/ - Token size limits
   crypto: Object.freeze([
     Object.freeze({ name: 'Private Key', pattern: /-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g }),
-    Object.freeze({ name: 'JWT Token', pattern: /eyJ[a-zA-Z0-9_-]{17,200}\.eyJ[a-zA-Z0-9_-]{17,5000}\.[a-zA-Z0-9_-]{40,500}/g })
+    Object.freeze({ name: 'JWT Token', pattern: /eyJ[a-zA-Z0-9_-]{17,200}\.eyJ[a-zA-Z0-9_-]{17,2000}\.[a-zA-Z0-9_-]{40,500}/g })
   ])
 });
 
@@ -715,11 +719,52 @@ export function getAllSecretPatterns() {
 }
 
 /**
- * Check for potential secrets in content
+ * Clone a RegExp to ensure isolation between concurrent calls.
+ * This prevents state leakage from the lastIndex property of global patterns.
+ *
+ * @param {RegExp} pattern - Pattern to clone
+ * @returns {RegExp} Fresh RegExp instance with same pattern and flags
+ * @private
+ */
+function cloneRegExp(pattern) {
+  return new RegExp(pattern.source, pattern.flags);
+}
+
+/**
+ * Find line number for a match position in content.
+ *
+ * @param {string} content - The full content
+ * @param {number} position - Character position of the match
+ * @returns {number} 1-based line number
+ * @private
+ */
+function getLineNumber(content, position) {
+  const lines = content.slice(0, position).split('\n');
+  return lines.length;
+}
+
+/**
+ * Check for potential secrets in content with structured logging support.
+ *
  * @param {string} content - Content to check
  * @param {Object} [options] - Detection options
  * @param {string[]} [options.categories] - Categories to check (default: all)
- * @returns {Object} Detection result with category information
+ * @param {string} [options.filePath] - Optional file path for context in findings
+ * @param {boolean} [options.includeLineNumbers=false] - Include line numbers for each match
+ * @returns {Object} Detection result with structured findings
+ *
+ * @example
+ * // Basic usage
+ * const result = detectSecrets(content);
+ * // { clean: false, findings: [{ type: 'API Key', category: 'generic', count: 1 }] }
+ *
+ * @example
+ * // With file context and line numbers
+ * const result = detectSecrets(content, {
+ *   filePath: 'src/config.js',
+ *   includeLineNumbers: true
+ * });
+ * // { clean: false, findings: [{ type: 'API Key', category: 'generic', count: 1, filePath: 'src/config.js', lines: [42] }] }
  */
 export function detectSecrets(content, options = {}) {
   const patterns = options.categories
@@ -728,12 +773,44 @@ export function detectSecrets(content, options = {}) {
 
   const findings = [];
   for (const { name, pattern, category } of patterns) {
-    // Reset lastIndex for safety with global regex patterns
-    // String.match() handles this internally, but explicit reset is defensive
-    pattern.lastIndex = 0;
-    const matches = content.match(pattern);
-    if (matches) {
-      findings.push({ type: name, category, count: matches.length });
+    // Clone the pattern to ensure complete isolation between concurrent calls.
+    // This prevents any state leakage from the lastIndex property of global patterns,
+    // which could occur if patterns are used with exec() or test() in other contexts.
+    // While String.match() is safe with global patterns, cloning provides defense-in-depth.
+    const freshPattern = cloneRegExp(pattern);
+
+    if (options.includeLineNumbers) {
+      // Use matchAll to get match positions for line number calculation
+      const matchIterator = content.matchAll(freshPattern);
+      const matches = [...matchIterator];
+
+      if (matches.length > 0) {
+        const lines = matches.map(m => getLineNumber(content, m.index));
+        const finding = {
+          type: name,
+          category,
+          count: matches.length,
+          lines: [...new Set(lines)].sort((a, b) => a - b) // Unique, sorted line numbers
+        };
+
+        if (options.filePath) {
+          finding.filePath = options.filePath;
+        }
+
+        findings.push(finding);
+      }
+    } else {
+      // Fast path: simple match count without line numbers
+      const matches = content.match(freshPattern);
+      if (matches) {
+        const finding = { type: name, category, count: matches.length };
+
+        if (options.filePath) {
+          finding.filePath = options.filePath;
+        }
+
+        findings.push(finding);
+      }
     }
   }
 

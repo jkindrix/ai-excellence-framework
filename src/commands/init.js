@@ -20,10 +20,49 @@ const __dirname = dirname(__filename);
 const PACKAGE_ROOT = join(__dirname, '..', '..');
 
 /**
- * Valid preset names for input validation
- * @type {ReadonlySet<string>}
+ * Valid preset names for input validation (lazy initialized to avoid circular dependency)
+ * @type {ReadonlySet<string>|null}
  */
-const VALID_PRESETS = new Set(Object.keys(PRESET_CONFIGS));
+let _validPresets = null;
+
+/**
+ * Get valid preset names (lazy initialization)
+ * @returns {ReadonlySet<string>}
+ */
+function getValidPresets() {
+  if (!_validPresets) {
+    _validPresets = new Set(Object.keys(PRESET_CONFIGS));
+  }
+  return _validPresets;
+}
+
+/**
+ * Sanitize a string for safe inclusion in error messages and logs.
+ * Prevents log injection attacks by removing control characters and ANSI escape sequences.
+ *
+ * @param {string} input - The string to sanitize
+ * @param {number} [maxLength=50] - Maximum length of output
+ * @returns {string} Sanitized string safe for error messages
+ * @private
+ */
+function sanitizeForError(input, maxLength = 50) {
+  if (typeof input !== 'string') {
+    return String(input).slice(0, maxLength);
+  }
+
+  // Remove control characters (0x00-0x1F, 0x7F) and ANSI escape sequences
+  let sanitized = input
+    .replace(/[\x00-\x1f\x7f]/g, '') // Remove control characters
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '') // Remove ANSI escape sequences
+    .replace(/\x1b\][^\x07]*\x07/g, ''); // Remove OSC sequences
+
+  // Truncate to max length
+  if (sanitized.length > maxLength) {
+    sanitized = `${sanitized.slice(0, maxLength)}...`;
+  }
+
+  return sanitized;
+}
 
 /**
  * Sanitize and validate command options to prevent injection and invalid input.
@@ -45,9 +84,10 @@ function sanitizeOptions(options) {
   }
 
   // Protect against prototype pollution
+  // Only check own properties, not inherited ones from the prototype chain
   const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
   for (const key of dangerousKeys) {
-    if (key in options) {
+    if (Object.hasOwn(options, key)) {
       throw createError('AIX-INIT-110', `Invalid option key: ${key}`);
     }
   }
@@ -61,9 +101,10 @@ function sanitizeOptions(options) {
     const presetStr = String(presetRaw).toLowerCase().trim();
     // Limit length and validate characters
     if (presetStr.length > 50 || !/^[a-z][a-z0-9_-]*$/.test(presetStr)) {
-      throw createError('AIX-INIT-111', `Invalid preset name format: ${presetStr.slice(0, 50)}`);
+      // Use sanitizeForError to prevent log injection via control characters
+      throw createError('AIX-INIT-111', `Invalid preset name format: ${sanitizeForError(presetStr)}`);
     }
-    sanitized.preset = VALID_PRESETS.has(presetStr) ? presetStr : 'standard';
+    sanitized.preset = getValidPresets().has(presetStr) ? presetStr : 'standard';
   } else {
     sanitized.preset = 'standard';
   }
@@ -110,11 +151,21 @@ function convertPresetFormat(presetName, preset) {
   };
 }
 
-// Build PRESETS from the centralized PRESET_CONFIGS
-// This eliminates duplication and ensures consistency
-const PRESETS = Object.fromEntries(
-  Object.entries(PRESET_CONFIGS).map(([name, config]) => [name, convertPresetFormat(name, config)])
-);
+// Build PRESETS from the centralized PRESET_CONFIGS (lazy initialized to avoid circular dependency)
+let _presets = null;
+
+/**
+ * Get presets object (lazy initialization)
+ * @returns {Object}
+ */
+function getPresets() {
+  if (!_presets) {
+    _presets = Object.fromEntries(
+      Object.entries(PRESET_CONFIGS).map(([name, config]) => [name, convertPresetFormat(name, config)])
+    );
+  }
+  return _presets;
+}
 
 /**
  * Main init command handler
@@ -154,7 +205,7 @@ export async function initCommand(rawOptions) {
   // Get configuration
   let config;
   if (options.yes || jsonOutput) {
-    config = PRESETS[options.preset];
+    config = getPresets()[options.preset];
     log(chalk.gray(`  Using preset: ${config.name}\n`));
   } else {
     config = await promptConfiguration(options.preset);
@@ -305,11 +356,12 @@ export async function initCommand(rawOptions) {
  * Prompt for configuration interactively
  */
 async function promptConfiguration(defaultPreset) {
+  const presets = getPresets();
   const { preset } = await enquirer.prompt({
     type: 'select',
     name: 'preset',
     message: 'Select a configuration preset:',
-    choices: Object.entries(PRESETS).map(([key, value]) => ({
+    choices: Object.entries(presets).map(([key, value]) => ({
       name: key,
       message: `${value.name} - ${value.description}`,
       value: key
@@ -317,7 +369,7 @@ async function promptConfiguration(defaultPreset) {
     initial: defaultPreset
   });
 
-  return PRESETS[preset];
+  return presets[preset];
 }
 
 /**

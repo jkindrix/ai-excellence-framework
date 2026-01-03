@@ -125,23 +125,23 @@ Active development.
     const { lintCommand } = await import('../src/commands/lint.js');
 
     const originalCwd = process.cwd();
-    const originalExit = process.exit;
-    let exitCode = 0;
     const originalLog = console.log;
 
     try {
       process.chdir(testDir);
-      process.exit = code => {
-        exitCode = code || 0;
-      };
       console.log = () => {};
 
-      await lintCommand({ verbose: false, ignoreErrors: false });
-
-      assert.strictEqual(exitCode, 1, 'Should exit with error when CLAUDE.md missing');
+      // lintCommand throws FrameworkError when there are errors
+      await assert.rejects(
+        async () => lintCommand({ verbose: false, ignoreErrors: false }),
+        {
+          code: 'AIX-VALID-200',
+          message: /Lint found.*error/
+        },
+        'Should throw FrameworkError when CLAUDE.md missing'
+      );
     } finally {
       process.chdir(originalCwd);
-      process.exit = originalExit;
       console.log = originalLog;
     }
   });
@@ -165,23 +165,23 @@ Some config: api_key = "sk-1234567890abcdefghijklmnopqrstuvwxyz"
     const { lintCommand } = await import('../src/commands/lint.js');
 
     const originalCwd = process.cwd();
-    const originalExit = process.exit;
-    let exitCode = 0;
     const originalLog = console.log;
 
     try {
       process.chdir(testDir);
-      process.exit = code => {
-        exitCode = code || 0;
-      };
       console.log = () => {};
 
-      await lintCommand({ verbose: false, ignoreErrors: false });
-
-      assert.strictEqual(exitCode, 1, 'Should error when secrets detected');
+      // lintCommand throws FrameworkError when secrets are detected
+      await assert.rejects(
+        async () => lintCommand({ verbose: false, ignoreErrors: false }),
+        {
+          code: 'AIX-VALID-200',
+          message: /Lint found.*error/
+        },
+        'Should throw FrameworkError when secrets detected'
+      );
     } finally {
       process.chdir(originalCwd);
-      process.exit = originalExit;
       console.log = originalLog;
     }
   });

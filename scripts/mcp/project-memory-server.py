@@ -28,8 +28,9 @@ Configuration via environment:
     PROJECT_MEMORY_RATE_LIMIT: Max operations per minute (default: 100)
 """
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
+import hashlib
 import json
 import logging
 import os
@@ -324,6 +325,68 @@ def validate_import_schema(data: dict) -> tuple[bool, str]:
 
     return True, ""
 
+
+def compute_data_checksum(data: dict) -> str:
+    """Compute SHA-256 checksum of export data for integrity verification.
+
+    Creates a deterministic hash of the data content (excluding metadata like
+    exported_at timestamp and the checksum itself) to verify data integrity
+    during import.
+
+    The checksum is computed over the 'data' section only, which contains:
+    - decisions: List of decision records
+    - patterns: List of pattern records
+    - context: Dict of context key-value pairs
+
+    Args:
+        data: Export data dictionary with a 'data' key
+
+    Returns:
+        Hex-encoded SHA-256 hash of the data content
+
+    Example:
+        >>> export = db.export_all()
+        >>> checksum = compute_data_checksum(export)
+        >>> export['checksum'] = checksum
+    """
+    # Extract just the data section for consistent hashing
+    # This excludes timestamps and stats which may vary
+    data_section = data.get("data", {})
+
+    # Create a deterministic JSON representation
+    # sort_keys=True ensures consistent ordering
+    canonical = json.dumps(data_section, sort_keys=True, separators=(',', ':'))
+
+    # Compute SHA-256 hash
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+def verify_data_checksum(data: dict) -> tuple[bool, str]:
+    """Verify the checksum of imported data.
+
+    Args:
+        data: Import data dictionary with 'data' and optional 'checksum' keys
+
+    Returns:
+        Tuple of (is_valid, message):
+        - (True, "checksum_valid") if checksum matches
+        - (True, "no_checksum") if no checksum present (backwards compatible)
+        - (False, error_message) if checksum doesn't match
+    """
+    stored_checksum = data.get("checksum")
+
+    if not stored_checksum:
+        # Backwards compatible: older exports may not have checksums
+        return True, "no_checksum"
+
+    computed = compute_data_checksum(data)
+
+    if computed == stored_checksum:
+        return True, "checksum_valid"
+    else:
+        return False, f"checksum mismatch: expected {stored_checksum[:16]}..., got {computed[:16]}..."
+
+
 # Purge confirmation tokens (thread-safe)
 # Token format: "PURGE-{random_hex}" with 60 second expiry
 #
@@ -497,6 +560,67 @@ class ConnectionPool:
                 self._pool.put(self._create_connection())
             self._initialized = True
             logger.info(f"Connection pool initialized with {self.pool_size} connections")
+
+    def warmup(self) -> dict:
+        """Warm up the connection pool by initializing and validating all connections.
+
+        This is useful for latency-sensitive deployments where you want to avoid
+        the connection creation overhead on the first request. Call this during
+        server startup to pre-establish all database connections.
+
+        The warmup process:
+        1. Ensures pool is initialized
+        2. Borrows each connection from the pool
+        3. Validates each connection with a simple query
+        4. Returns connections to the pool
+
+        Enable automatic warmup at startup via:
+            PROJECT_MEMORY_POOL_WARMUP=true
+
+        Returns:
+            dict: Warmup statistics with keys:
+                - connections_warmed: Number of connections validated
+                - warmup_time_ms: Time taken in milliseconds
+                - errors: Number of validation errors (if any)
+        """
+        import time as warmup_time
+        start = warmup_time.time()
+
+        # Ensure pool is initialized
+        if not self._initialized:
+            self.initialize()
+
+        connections_warmed = 0
+        errors = 0
+        borrowed = []
+
+        try:
+            # Borrow all connections from the pool
+            for _ in range(self.pool_size):
+                try:
+                    conn = self._pool.get(timeout=5.0)
+                    # Validate connection
+                    conn.execute("SELECT 1")
+                    borrowed.append(conn)
+                    connections_warmed += 1
+                except Exception as e:
+                    errors += 1
+                    logger.warning(f"Connection warmup validation failed: {e}")
+        finally:
+            # Return all connections to the pool
+            for conn in borrowed:
+                self._return_connection(conn)
+
+        elapsed_ms = (warmup_time.time() - start) * 1000
+
+        result = {
+            "connections_warmed": connections_warmed,
+            "warmup_time_ms": round(elapsed_ms, 2),
+            "errors": errors
+        }
+
+        logger.info(f"Connection pool warmup complete: {result}")
+        return result
 
     def _return_connection(self, conn: sqlite3.Connection) -> None:
         """Return a connection to the pool and notify waiting threads."""
@@ -1423,7 +1547,21 @@ class ProjectMemoryDB:
             return stats
 
     def export_all(self) -> dict:
-        """Export all data as JSON-serializable dictionary."""
+        """Export all data as JSON-serializable dictionary with checksum.
+
+        The export includes a SHA-256 checksum of the data section for
+        integrity verification during import. This detects corruption
+        or tampering between export and import operations.
+
+        Returns:
+            dict: Export data with keys:
+                - version: Server version
+                - exported_at: ISO timestamp
+                - project: Project name
+                - data: The actual data (decisions, patterns, context)
+                - stats: Current database statistics
+                - checksum: SHA-256 hash of the data section
+        """
         with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row
 
@@ -1439,7 +1577,7 @@ class ProjectMemoryDB:
             context = {row[0]: row[1] for row in
                       conn.execute("SELECT key, value FROM context").fetchall()}
 
-            return {
+            export_data = {
                 "version": VERSION,
                 "exported_at": datetime.now().isoformat(),
                 "project": Path.cwd().name,
@@ -1451,26 +1589,40 @@ class ProjectMemoryDB:
                 "stats": self.get_stats()
             }
 
-    def import_data(self, data: dict, merge: bool = True) -> dict:
+            # Add checksum for integrity verification
+            export_data["checksum"] = compute_data_checksum(export_data)
+
+            return export_data
+
+    def import_data(self, data: dict, merge: bool = True, verify_checksum: bool = True) -> dict:
         """
-        Import data from exported JSON.
+        Import data from exported JSON with optional checksum verification.
 
         Args:
             data: Exported data dictionary
             merge: If True, merge with existing data. If False, replace all.
+            verify_checksum: If True, verify checksum when present (default: True)
 
         Returns:
-            Dict with import statistics
+            Dict with import statistics including checksum_status
 
         Raises:
-            ValueError: If the data fails schema validation
+            ValueError: If the data fails schema validation or checksum verification
         """
         # Validate import data schema
         is_valid, error_msg = validate_import_schema(data)
         if not is_valid:
             raise ValueError(f"Invalid import data: {error_msg}")
 
-        stats = {"decisions": 0, "patterns": 0, "context": 0, "skipped": 0}
+        # Verify checksum if enabled and present
+        checksum_status = "not_present"
+        if verify_checksum:
+            checksum_valid, checksum_msg = verify_data_checksum(data)
+            if not checksum_valid:
+                raise ValueError(f"Import rejected: {checksum_msg}")
+            checksum_status = checksum_msg
+
+        stats = {"decisions": 0, "patterns": 0, "context": 0, "skipped": 0, "checksum_status": checksum_status}
 
         with self._get_conn() as conn:
             if not merge:
@@ -1536,7 +1688,31 @@ class ProjectMemoryDB:
         return stats
 
     def health_check(self) -> dict:
-        """Perform health check on the database."""
+        """Perform health check on the database.
+
+        Security Considerations:
+        ------------------------
+        The health check response includes operational metrics that could
+        reveal system state in security-sensitive environments:
+
+        - **exhaustion_count**: Pool exhaustion history (load patterns)
+        - **decisions_used_percent**: Capacity utilization
+        - **current_usage**: Rate limiter state
+
+        In standard MCP deployments, health checks are only accessible to
+        authenticated Claude sessions. For multi-tenant or externally-exposed
+        deployments, consider:
+
+        1. Restricting health endpoint access to internal networks
+        2. Omitting sensitive counters in responses
+        3. Rate limiting health check calls themselves
+
+        For most single-user and internal team deployments, these metrics
+        provide valuable operational insight with minimal security risk.
+
+        Returns:
+            dict: Health status with component checks and metrics
+        """
         health = {
             "status": "healthy",
             "version": VERSION,
@@ -2321,6 +2497,19 @@ async def main():
     logger.info(f"Rate limit: {RATE_LIMIT} ops/min ({persist_str}), Pool size: {POOL_SIZE}")
     if PERSIST_RATE_LIMIT:
         logger.info(f"Rate limit DB cleanup interval: {cleanup_interval}s")
+
+    # Optional pool warmup for latency-sensitive deployments
+    # Enable via: PROJECT_MEMORY_POOL_WARMUP=true
+    pool_warmup = os.environ.get("PROJECT_MEMORY_POOL_WARMUP", "false").lower() == "true"
+    if pool_warmup:
+        logger.info("Pool warmup enabled, pre-initializing connections...")
+        try:
+            database = get_db()
+            if database._pool:
+                warmup_result = database._pool.warmup()
+                logger.info(f"Pool warmup completed: {warmup_result}")
+        except Exception as e:
+            logger.warning(f"Pool warmup failed (non-fatal): {e}")
 
     # Set up graceful shutdown
     import signal

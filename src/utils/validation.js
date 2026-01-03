@@ -4,7 +4,7 @@
  * Provides secure validation for paths, configurations, and user inputs.
  */
 
-import { existsSync, statSync, accessSync, constants } from 'fs';
+import { statSync, accessSync, constants } from 'fs';
 import { resolve, isAbsolute, normalize, relative } from 'path';
 
 /**
@@ -62,35 +62,45 @@ export function validatePath(inputPath, options = {}) {
     }
   }
 
-  // Check existence
-  const pathExists = existsSync(normalizedPath);
+  // Use a single statSync call to avoid TOCTOU race conditions.
+  // The file could be deleted/changed between separate existsSync and statSync calls.
+  // This approach is atomic: we either get stats or catch an error.
+  let stats = null;
+  let pathExists = false;
 
+  try {
+    stats = statSync(normalizedPath);
+    pathExists = true;
+  } catch (err) {
+    // ENOENT means file doesn't exist - this is expected and not an error
+    // Other errors (EACCES, etc.) should be reported
+    if (err.code !== 'ENOENT') {
+      result.error = `Cannot access path: ${err.message}`;
+      return result;
+    }
+    // pathExists remains false
+  }
+
+  // Check existence requirement
   if (options.mustExist && !pathExists) {
     result.error = 'Path does not exist';
     return result;
   }
 
-  // Check type (directory vs file)
-  if (pathExists) {
-    try {
-      const stats = statSync(normalizedPath);
+  // Check type (directory vs file) - only if path exists
+  if (pathExists && stats) {
+    if (options.mustBeDirectory && !stats.isDirectory()) {
+      result.error = 'Path must be a directory';
+      return result;
+    }
 
-      if (options.mustBeDirectory && !stats.isDirectory()) {
-        result.error = 'Path must be a directory';
-        return result;
-      }
-
-      if (options.mustBeFile && !stats.isFile()) {
-        result.error = 'Path must be a file';
-        return result;
-      }
-    } catch (err) {
-      result.error = `Cannot read path: ${err.message}`;
+    if (options.mustBeFile && !stats.isFile()) {
+      result.error = 'Path must be a file';
       return result;
     }
   }
 
-  // Check write permission
+  // Check write permission - only if path exists
   if (options.mustBeWritable && pathExists) {
     try {
       accessSync(normalizedPath, constants.W_OK);
