@@ -33,8 +33,8 @@ if (currentVersion < MIN_NODE_VERSION) {
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
+import { dirname } from 'path';
+import { createRequire } from 'module';
 import { randomUUID } from 'crypto';
 
 // Import commands
@@ -160,6 +160,7 @@ function createAbortError(commandName, timeoutMs, reason) {
  * - Proper signal propagation for cancellable operations
  * - Clear abort reason for debugging
  * - Defensive handling of edge cases (pre-aborted signals, race conditions)
+ * - Graceful handling of SIGINT (Ctrl+C) and SIGTERM signals
  *
  * If the command takes longer than the configured timeout, it will be aborted
  * with an appropriate error message.
@@ -178,7 +179,7 @@ function withTimeout(handler, commandName) {
 
     logger.debug(`Starting ${commandName} with timeout: ${timeoutMs}ms`, { command: commandName, timeout: timeoutMs });
 
-    // Create an AbortController for manual cancellation (future use)
+    // Create an AbortController for manual cancellation and signal handling
     const controller = new AbortController();
 
     // Create a timeout signal using AbortSignal.timeout()
@@ -209,7 +210,27 @@ function withTimeout(handler, commandName) {
     let abortHandler = null;
 
     /**
-     * Clean up abort listener and reset state.
+     * Handle process signals (SIGINT, SIGTERM) for graceful abort.
+     * This enables Ctrl+C to abort a running command cleanly.
+     *
+     * @param {string} signal - The signal name (SIGINT or SIGTERM)
+     */
+    const handleSignal = signal => {
+      logger.debug(`Received ${signal}, aborting ${commandName}`, { signal, command: commandName });
+
+      // Create a meaningful abort reason
+      const reason = new Error(`Command ${commandName} interrupted by ${signal}`);
+      reason.name = 'AbortError';
+      reason.code = 'ERR_ABORT';
+
+      // Abort the controller which will propagate to combinedSignal
+      if (!controller.signal.aborted) {
+        controller.abort(reason);
+      }
+    };
+
+    /**
+     * Clean up abort listener, signal handlers, and reset state.
      * Safe to call multiple times (idempotent).
      */
     const cleanup = () => {
@@ -218,6 +239,10 @@ function withTimeout(handler, commandName) {
       }
       cleanedUp = true;
 
+      // Remove signal handlers to prevent memory leaks and ghost handlers
+      process.removeListener('SIGINT', handleSignal);
+      process.removeListener('SIGTERM', handleSignal);
+
       if (abortHandler) {
         combinedSignal.removeEventListener('abort', abortHandler);
         abortHandler = null;
@@ -225,6 +250,11 @@ function withTimeout(handler, commandName) {
       abortReject = null;
       currentOperationId = null;
     };
+
+    // Register signal handlers for graceful abort on Ctrl+C or termination
+    // Use { once: false } implicitly - we handle cleanup manually
+    process.on('SIGINT', handleSignal);
+    process.on('SIGTERM', handleSignal);
 
     // Create abort handler that can be cleaned up
     abortHandler = () => {
@@ -258,7 +288,7 @@ function withTimeout(handler, commandName) {
       }
       throw error;
     } finally {
-      // Clean up: remove abort listener to prevent memory leaks
+      // Clean up: remove abort and signal listeners to prevent memory leaks
       cleanup();
     }
   };
@@ -267,8 +297,11 @@ function withTimeout(handler, commandName) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Read package.json for version
-const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
+// Import package.json using createRequire for ESM compatibility
+// This is the standard pattern for importing JSON in ES modules
+// and matches the approach used in src/index.js for consistency
+const require = createRequire(import.meta.url);
+const packageJson = require('../package.json');
 
 // Expected types for known options (for explicit type checking)
 const OPTION_TYPES = {
@@ -330,23 +363,43 @@ function normalizeOptionTypes(opts) {
  * Validate that all option values are within acceptable length bounds.
  * Prevents denial-of-service via extremely long inputs and memory exhaustion.
  *
+ * Collects all violations before reporting to provide complete diagnostics
+ * while still preventing the attack. This is better for debugging and provides
+ * a complete picture of input issues.
+ *
  * @param {Object} opts - Options object from commander
  * @throws {Error} If any option value exceeds MAX_ARG_LENGTH
  */
 function validateInputLengths(opts) {
+  const violations = [];
+
   for (const [key, value] of Object.entries(opts)) {
     if (typeof value === 'string' && value.length > MAX_ARG_LENGTH) {
-      const truncated = sanitizeForDisplay(value, 30);
-      logger.error(`Option '${key}' value is too long (${value.length} chars, max: ${MAX_ARG_LENGTH})`, {
-        option: key,
+      violations.push({
+        key,
         length: value.length,
+        truncated: sanitizeForDisplay(value, 30)
+      });
+    }
+  }
+
+  if (violations.length > 0) {
+    // Log all violations for structured logging consumers
+    for (const v of violations) {
+      logger.error(`Option '${v.key}' value is too long (${v.length} chars, max: ${MAX_ARG_LENGTH})`, {
+        option: v.key,
+        length: v.length,
         maxLength: MAX_ARG_LENGTH
       });
-      console.error(chalk.red('\nError: Option value too long'));
-      console.error(chalk.gray(`Option '${key}' is ${value.length} characters (max: ${MAX_ARG_LENGTH})`));
-      console.error(chalk.gray(`Value starts with: "${truncated}"`));
-      process.exit(1);
     }
+
+    // User-friendly output
+    console.error(chalk.red(`\nError: ${violations.length} option value(s) too long`));
+    for (const v of violations) {
+      console.error(chalk.gray(`  - '${v.key}' is ${v.length} characters (max: ${MAX_ARG_LENGTH})`));
+      console.error(chalk.gray(`    Value starts with: "${v.truncated}"`));
+    }
+    process.exit(1);
   }
 }
 
