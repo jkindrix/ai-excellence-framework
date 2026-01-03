@@ -138,6 +138,100 @@ The framework includes security features to help protect your codebase:
 | MCP server security        | Rate limiting, input validation       |
 | Template security          | No hardcoded credentials in templates |
 
+## Security Architecture
+
+### Threat Model
+
+**Assets Protected:**
+- Secrets and credentials in project files
+- Project configuration (CLAUDE.md, ai-excellence.config.json)
+- MCP memory database (decisions, patterns, context)
+- User input (command arguments, file paths, configuration)
+
+**Mitigations by Threat:**
+
+| Threat | Mitigations | Components |
+|--------|-------------|------------|
+| Secret Exposure | Content scanning with 100+ patterns, gitignore management | CLI, Pre-commit hooks |
+| Injection Attacks | Input validation, sanitization, parameterized queries | CLI, MCP Server |
+| Denial of Service | Rate limiting, timeout controls, bounded input | CLI, MCP Server |
+| Path Traversal | Path normalization, base path validation, null byte detection | CLI, Init Command |
+| Prototype Pollution | Object.create(null), Object.hasOwn() checks | CLI, Commands |
+| Log Injection | Control character stripping, ANSI escape removal | CLI, Error handling |
+| ReDoS | Bounded quantifiers in all regex patterns | Secret detection |
+| Memory Exhaustion | Size limits on imports, connection pooling | MCP Server |
+
+### CLI Security
+
+**Input Validation Chain:**
+```
+User Input → Length Check → Type Normalization → Sanitization → Command Handler
+```
+
+- Maximum argument length: 1000 chars (configurable via `AIX_MAX_ARG_LENGTH`)
+- Command timeout: 5 minutes (configurable via `AIX_TIMEOUT`)
+- Signal handling for graceful abort (SIGINT, SIGTERM)
+- All violations collected before reporting
+
+### Secret Detection
+
+100+ patterns across 10 categories with ReDoS-protected regex:
+- AI/ML Keys (OpenAI, Anthropic, Google AI, etc.)
+- Cloud Providers (AWS, Azure, GCP)
+- VCS Tokens (GitHub, GitLab, Bitbucket)
+- Communication (Slack, Discord, Twilio)
+- Payment (Stripe, PayPal)
+- Databases (MongoDB, PostgreSQL, MySQL, Redis)
+- Package Registries (npm, PyPI)
+- Email Services (SendGrid, Mailchimp)
+- Cryptographic Material (Private keys, JWTs)
+
+**ReDoS Protection:** All patterns use bounded quantifiers (e.g., `{1,100}` instead of `+`). Patterns are tested in `tests/security.test.js`.
+
+### MCP Server Security
+
+**Rate Limiting:**
+- Default: 100 ops/minute (`PROJECT_MEMORY_RATE_LIMIT`)
+- Token bucket algorithm with sliding window
+- Metrics exposed via health endpoint
+
+**Connection Pooling:**
+- Pool size: 5 (`PROJECT_MEMORY_POOL_SIZE`)
+- Temp connection limit: 10
+- Wait queue: 50 requests max
+- WAL mode for SQLite concurrency
+
+**Import Security:**
+```
+JSON Size Check (before parsing) → JSON Parse → Schema Validation → Checksum Verification → Import
+```
+
+Limits:
+- JSON size: 10MB
+- Decisions: 10,000
+- Patterns: 1,000
+- Context keys: 500
+
+**Purge Protection:** Two-step confirmation with 128-bit token and 60-second TTL.
+
+### Error Handling
+
+Error contexts are sanitized to prevent information leakage:
+- Path redaction for home directories
+- Circular reference handling
+- Sensitive env var filtering (`*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*`, etc.)
+- Stack trace sanitization
+
+### Running Security Tests
+
+```bash
+# All security tests
+node --test tests/security.test.js
+
+# ReDoS resistance tests
+node --test tests/security.test.js --test-name-pattern "ReDoS"
+```
+
 ## Known Security Considerations
 
 ### AI-Specific Risks
