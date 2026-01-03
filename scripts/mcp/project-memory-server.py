@@ -673,10 +673,8 @@ class ConnectionPool:
 
             if is_temp_connection:
                 now = time.time()
-                # Rate-limit exhaustion warnings with jitter to prevent timing attacks.
-                # Base interval: 10-15 seconds (randomized to obscure pool state).
-                # Security: Adding jitter prevents attackers from using log timing
-                # to precisely determine pool exhaustion state.
+                # Rate-limit exhaustion warnings to avoid log flooding.
+                # Randomized interval reduces log correlation in high-load scenarios.
                 warning_interval = 10.0 + random.random() * 5.0  # 10-15 seconds
                 if now - self._last_exhaustion_warning >= warning_interval:
                     self._last_exhaustion_warning = now

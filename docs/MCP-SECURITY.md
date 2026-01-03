@@ -78,6 +78,54 @@ PROJECT_MEMORY_RATE_LIMIT=100  # Max 100 operations per minute
 rate_limiter = RateLimiter(max_ops=RATE_LIMIT, window_seconds=60)
 ```
 
+#### Recommended Settings by Team Size
+
+| Deployment Type     | Team Size | RATE_LIMIT | POOL_SIZE | Rationale                                                  |
+| ------------------- | --------- | ---------- | --------- | ---------------------------------------------------------- |
+| **Solo Developer**  | 1         | 100        | 3         | Default settings are sufficient for individual use         |
+| **Small Team**      | 2-5       | 300        | 5         | Moderate concurrency, shared memory access                 |
+| **Medium Team**     | 6-15      | 600        | 10        | Higher concurrency, consider read replicas                 |
+| **Large Team**      | 16-50     | 1000       | 20        | Consider PostgreSQL backend for scalability                |
+| **Enterprise**      | 50+       | 2000+      | 50+       | Requires PostgreSQL, sharding, dedicated infrastructure    |
+
+**Configuration Examples:**
+
+```bash
+# Small Team (2-5 developers)
+export PROJECT_MEMORY_RATE_LIMIT=300
+export PROJECT_MEMORY_POOL_SIZE=5
+export PROJECT_MEMORY_POOL_WARMUP=true
+
+# Medium Team (6-15 developers)
+export PROJECT_MEMORY_RATE_LIMIT=600
+export PROJECT_MEMORY_POOL_SIZE=10
+export PROJECT_MEMORY_POOL_WARMUP=true
+export PROJECT_MEMORY_MAX_DECISIONS=5000
+
+# Large Team (16+ developers)
+# Consider switching to PostgreSQL backend
+export PROJECT_MEMORY_RATE_LIMIT=1000
+export PROJECT_MEMORY_POOL_SIZE=20
+export PROJECT_MEMORY_STORAGE=postgres
+export PROJECT_MEMORY_POSTGRES_URL="postgresql://user:pass@host/db"
+```
+
+**Monitoring Rate Limits:**
+
+The rate limiter exposes metrics via the `get_rate_limiter_stats` tool:
+
+```
+Tool: get_rate_limiter_stats
+Response: {
+  "current_window_ops": 45,
+  "limit": 100,
+  "window_seconds": 60,
+  "utilization_percent": 45
+}
+```
+
+Monitor `utilization_percent` - if consistently >80%, increase `RATE_LIMIT`.
+
 ### 4. Size Limits
 
 Configurable limits prevent resource exhaustion:

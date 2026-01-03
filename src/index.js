@@ -236,6 +236,11 @@ export const PRESET_CONFIGS = {
     agents: ['reviewer', 'explorer', 'tester'],
     hooks: true,
     mcp: true,
+    mcpConfig: {
+      poolWarmup: true, // Enable warmup for lower first-request latency
+      poolSize: 5, // Default for small teams (see docs/MCP-SECURITY.md for sizing)
+      rateLimit: 300 // Higher limit for team usage
+    },
     preCommit: true,
     metrics: { enabled: true, autoCollect: true },
     federation: true

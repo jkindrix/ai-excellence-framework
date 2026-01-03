@@ -354,6 +354,10 @@ export async function initCommand(rawOptions) {
 
 /**
  * Prompt for configuration interactively
+ *
+ * @param {string} defaultPreset - Default preset to pre-select
+ * @returns {Promise<Object>} Selected preset configuration
+ * @private
  */
 async function promptConfiguration(defaultPreset) {
   const presets = getPresets();
@@ -373,7 +377,11 @@ async function promptConfiguration(defaultPreset) {
 }
 
 /**
- * Check for existing framework files
+ * Check for existing framework files in the target directory
+ *
+ * @param {string} cwd - Directory to check
+ * @returns {string[]} Array of existing file paths (relative to cwd)
+ * @private
  */
 function checkExistingFiles(cwd) {
   const filesToCheck = [
@@ -387,7 +395,14 @@ function checkExistingFiles(cwd) {
 }
 
 /**
- * Create directory structure
+ * Create directory structure for the framework
+ *
+ * @param {string} cwd - Target directory
+ * @param {Object} config - Preset configuration
+ * @param {boolean} dryRun - If true, don't create directories
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function createDirectories(cwd, config, dryRun, results) {
   const dirs = [
@@ -424,7 +439,13 @@ async function createDirectories(cwd, config, dryRun, results) {
 }
 
 /**
- * Install CLAUDE.md template
+ * Install CLAUDE.md template file
+ *
+ * @param {string} cwd - Target directory
+ * @param {boolean} dryRun - If true, don't write files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function installClaudeMd(cwd, dryRun, results) {
   const targetPath = join(cwd, 'CLAUDE.md');
@@ -450,7 +471,10 @@ async function installClaudeMd(cwd, dryRun, results) {
 }
 
 /**
- * Generate CLAUDE.md template inline
+ * Generate CLAUDE.md template inline when external template is unavailable
+ *
+ * @returns {string} CLAUDE.md template content with placeholders
+ * @private
  */
 function generateClaudeMdTemplate() {
   return `# Project: [PROJECT_NAME]
@@ -544,7 +568,14 @@ Before committing, verify:
 }
 
 /**
- * Install slash commands
+ * Install slash commands from framework package
+ *
+ * @param {string} cwd - Target directory
+ * @param {string[]} commands - Array of command names to install
+ * @param {boolean} dryRun - If true, don't copy files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function installCommands(cwd, commands, dryRun, results) {
   const commandsDir = join(cwd, '.claude', 'commands');
@@ -565,7 +596,14 @@ async function installCommands(cwd, commands, dryRun, results) {
 }
 
 /**
- * Install subagents
+ * Install subagent definitions from framework package
+ *
+ * @param {string} cwd - Target directory
+ * @param {string[]} agents - Array of agent names to install
+ * @param {boolean} dryRun - If true, don't copy files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function installAgents(cwd, agents, dryRun, results) {
   const agentsDir = join(cwd, '.claude', 'agents');
@@ -586,7 +624,13 @@ async function installAgents(cwd, agents, dryRun, results) {
 }
 
 /**
- * Install hook scripts
+ * Install hook scripts from framework package
+ *
+ * @param {string} cwd - Target directory
+ * @param {boolean} dryRun - If true, don't copy files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function installHooks(cwd, dryRun, results) {
   const hooksDir = join(cwd, 'scripts', 'hooks');
@@ -709,7 +753,13 @@ async function installPreCommit(cwd, dryRun, results) {
 }
 
 /**
- * Install MCP server
+ * Install MCP server files from framework package
+ *
+ * @param {string} cwd - Target directory
+ * @param {boolean} dryRun - If true, don't copy files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function installMcp(cwd, dryRun, results) {
   const mcpDir = join(cwd, 'scripts', 'mcp');
@@ -732,7 +782,13 @@ async function installMcp(cwd, dryRun, results) {
 }
 
 /**
- * Install templates
+ * Install template files from framework package
+ *
+ * @param {string} cwd - Target directory
+ * @param {boolean} dryRun - If true, don't copy files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function installTemplates(cwd, dryRun, results) {
   const templatesDir = join(cwd, 'templates');
@@ -759,7 +815,13 @@ async function installTemplates(cwd, dryRun, results) {
 }
 
 /**
- * Install metrics collection
+ * Install metrics collection scripts from framework package
+ *
+ * @param {string} cwd - Target directory
+ * @param {boolean} dryRun - If true, don't copy files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function installMetrics(cwd, dryRun, results) {
   const metricsDir = join(cwd, 'scripts', 'metrics');
@@ -776,7 +838,13 @@ async function installMetrics(cwd, dryRun, results) {
 }
 
 /**
- * Update .gitignore with framework entries
+ * Update .gitignore with framework-specific entries
+ *
+ * @param {string} cwd - Target directory
+ * @param {boolean} dryRun - If true, don't modify files
+ * @param {Object} results - Results tracker with created/skipped arrays
+ * @returns {Promise<void>}
+ * @private
  */
 async function updateGitignore(cwd, dryRun, results) {
   const gitignorePath = join(cwd, '.gitignore');
@@ -806,7 +874,15 @@ docs/session-notes/*.local.md
 }
 
 /**
- * Print installation results
+ * Print installation results to console
+ *
+ * @param {Object} results - Results object with created, skipped, and errors arrays
+ * @param {string[]} results.created - Files that were created
+ * @param {string[]} results.skipped - Files that were skipped
+ * @param {string[]} results.errors - Errors that occurred
+ * @param {boolean} dryRun - If true, shows "Would create" instead of "Created"
+ * @returns {void}
+ * @private
  */
 function printResults(results, dryRun) {
   console.log('');
@@ -831,6 +907,11 @@ function printResults(results, dryRun) {
 
 /**
  * Print next steps after installation
+ *
+ * @param {Object} config - Preset configuration with components object
+ * @param {Object} config.components - Component flags (preCommit, mcp, etc.)
+ * @returns {void}
+ * @private
  */
 function printNextSteps(config) {
   console.log(chalk.cyan('\n  Next Steps:\n'));

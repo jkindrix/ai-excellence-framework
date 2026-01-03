@@ -118,10 +118,19 @@ export function validatePath(inputPath, options = {}) {
 /**
  * Validate a preset name
  *
+ * Valid presets are:
+ * - 'minimal', 'standard', 'full', 'team' - Predefined presets from PRESET_CONFIGS
+ * - 'custom' - Special value indicating user-provided configuration (not in PRESET_CONFIGS)
+ *
+ * Note: 'custom' is intentionally valid here but not in PRESET_CONFIGS. When preset='custom',
+ * the user is expected to provide their own commands, agents, and other configuration values
+ * rather than inheriting from a predefined preset.
+ *
  * @param {string} preset - Preset name to validate
  * @returns {object} Validation result
  */
 export function validatePreset(preset) {
+  // 'custom' is a special marker for user-provided configuration, not a preset in PRESET_CONFIGS
   const validPresets = ['minimal', 'standard', 'full', 'team', 'custom'];
 
   const result = {

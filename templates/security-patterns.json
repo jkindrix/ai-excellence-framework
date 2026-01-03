@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Security pattern configuration for AI Excellence Framework security hook",
+  "version": "1.0.0",
+  "patterns": {
+    "eval_usage": {
+      "enabled": true,
+      "severity": "critical",
+      "pattern": "eval\\s*\\(",
+      "message": "eval() usage detected - potential code injection risk",
+      "extensions": ["*.js", "*.ts", "*.py"],
+      "excludeDirs": ["node_modules", ".git", "__pycache__"]
+    },
+    "hardcoded_credentials": {
+      "enabled": true,
+      "severity": "critical",
+      "pattern": "(password|secret|api_key|apikey|token)\\s*=\\s*['\"][^'\"]{8,}",
+      "message": "Potential hardcoded credentials detected",
+      "extensions": ["*.js", "*.ts", "*.py", "*.go"],
+      "excludeDirs": ["node_modules", ".git", "__pycache__", "tests", "__tests__", "test"],
+      "excludePatterns": [".example", ".sample", ".md"]
+    },
+    "sql_injection": {
+      "enabled": true,
+      "severity": "critical",
+      "pattern": "(SELECT|INSERT|UPDATE|DELETE).*\\+.*\\$|f['\"].*SELECT|format.*SELECT",
+      "message": "Potential SQL injection - string concatenation in SQL",
+      "extensions": ["*.js", "*.ts", "*.py"],
+      "excludeDirs": ["node_modules", ".git", "__pycache__", "tests", "__tests__", "test"]
+    },
+    "command_injection": {
+      "enabled": true,
+      "severity": "critical",
+      "pattern": "exec\\s*\\(.*\\+|subprocess.*shell\\s*=\\s*True|os\\.system\\s*\\(",
+      "message": "Potential command injection detected",
+      "extensions": ["*.js", "*.ts", "*.py"],
+      "excludeDirs": ["node_modules", ".git", "__pycache__", "tests", "__tests__", "test"]
+    },
+    "innerHTML_xss": {
+      "enabled": true,
+      "severity": "warning",
+      "strictModeOnly": true,
+      "pattern": "innerHTML\\s*=",
+      "message": "innerHTML assignment detected - potential XSS risk",
+      "extensions": ["*.js", "*.ts", "*.jsx", "*.tsx"],
+      "excludeDirs": ["node_modules", ".git"]
+    },
+    "dangerously_set_innerHTML": {
+      "enabled": true,
+      "severity": "warning",
+      "strictModeOnly": true,
+      "pattern": "dangerouslySetInnerHTML",
+      "message": "dangerouslySetInnerHTML detected - review for XSS safety",
+      "extensions": ["*.js", "*.ts", "*.jsx", "*.tsx"],
+      "excludeDirs": ["node_modules", ".git"]
+    },
+    "pickle_deserialization": {
+      "enabled": true,
+      "severity": "warning",
+      "strictModeOnly": true,
+      "pattern": "pickle\\.load",
+      "message": "pickle.load detected - deserialization vulnerability risk",
+      "extensions": ["*.py"],
+      "excludeDirs": ["node_modules", ".git", "__pycache__"]
+    },
+    "yaml_load_unsafe": {
+      "enabled": true,
+      "severity": "warning",
+      "strictModeOnly": true,
+      "pattern": "yaml\\.load\\s*\\(",
+      "excludePattern": "safe_load",
+      "message": "yaml.load without Loader detected - use yaml.safe_load instead",
+      "extensions": ["*.py"],
+      "excludeDirs": ["node_modules", ".git", "__pycache__"]
+    }
+  },
+  "customPatterns": [],
+  "notes": {
+    "severity_levels": ["critical", "warning", "info"],
+    "critical_blocks_commit": "When AIX_SECURITY_ENFORCE=true, critical issues block commits",
+    "strictModeOnly": "These patterns only run when AIX_SECURITY_STRICT=true"
+  }
+}

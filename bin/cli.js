@@ -19,6 +19,17 @@
  *   AIX_DEBUG         - Enable debug output (default: false)
  */
 
+// Node.js version check - must run before any imports that might fail on older versions
+const MIN_NODE_VERSION = 18;
+const currentVersion = parseInt(process.versions.node.split('.')[0], 10);
+
+if (currentVersion < MIN_NODE_VERSION) {
+  console.error(`\n❌ Error: Node.js ${MIN_NODE_VERSION}.x or higher is required.`);
+  console.error(`   Current version: ${process.version}`);
+  console.error('   Please upgrade Node.js: https://nodejs.org/\n');
+  process.exit(1);
+}
+
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { fileURLToPath } from 'url';
@@ -201,6 +212,62 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'
 // Maximum length for any single CLI argument value
 const MAX_ARG_LENGTH = 1000;
 
+// Expected types for known options (for explicit type checking)
+const OPTION_TYPES = {
+  // Boolean options
+  force: 'boolean',
+  yes: 'boolean',
+  dryRun: 'boolean',
+  verbose: 'boolean',
+  json: 'boolean',
+  fix: 'boolean',
+  check: 'boolean',
+  hooks: 'boolean',
+  mcp: 'boolean',
+  color: 'boolean',
+  keepConfig: 'boolean',
+  ignoreErrors: 'boolean',
+  // String options
+  preset: 'string',
+  tools: 'string',
+  only: 'string'
+};
+
+/**
+ * Validate and normalize Commander.js option types.
+ * Ensures options are the expected type and handles coercion.
+ *
+ * @param {Object} opts - Options object from commander
+ * @returns {Object} Normalized options with correct types
+ */
+function normalizeOptionTypes(opts) {
+  const normalized = { ...opts };
+
+  for (const [key, expectedType] of Object.entries(OPTION_TYPES)) {
+    if (!(key in normalized)) {
+      continue;
+    }
+
+    const value = normalized[key];
+
+    if (expectedType === 'boolean') {
+      // Coerce to boolean (Commander should already do this, but be explicit)
+      if (typeof value !== 'boolean') {
+        normalized[key] = Boolean(value);
+        logger.debug(`Coerced option '${key}' to boolean: ${normalized[key]}`, { option: key });
+      }
+    } else if (expectedType === 'string') {
+      // Ensure string type
+      if (value !== undefined && value !== null && typeof value !== 'string') {
+        normalized[key] = String(value);
+        logger.debug(`Coerced option '${key}' to string`, { option: key });
+      }
+    }
+  }
+
+  return normalized;
+}
+
 /**
  * Validate that all option values are within acceptable length bounds.
  * Prevents denial-of-service via extremely long inputs and memory exhaustion.
@@ -233,9 +300,12 @@ program
   .version(packageJson.version)
   .option('--no-color', 'Disable colored output (also respects NO_COLOR env var)')
   .hook('preAction', thisCommand => {
+    // Normalize and validate option types
+    const rawOpts = thisCommand.opts();
+    const opts = normalizeOptionTypes(rawOpts);
+
     // Check for --no-color flag or NO_COLOR environment variable
     // Chalk automatically respects NO_COLOR, but we also support the CLI flag
-    const opts = thisCommand.opts();
     if (opts.color === false || process.env.NO_COLOR) {
       // Disable chalk colors by setting the level to 0
       chalk.level = 0;
