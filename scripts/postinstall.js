@@ -16,7 +16,7 @@ const message = `
 ║     npx ai-excellence doctor       Diagnose issues         ║
 ║                                                            ║
 ║   Documentation:                                           ║
-║     https://github.com/your-username/ai-excellence-framework ║
+║     https://ai-excellence-framework.github.io/             ║
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
 `;
