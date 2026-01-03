@@ -127,10 +127,64 @@ POOL_SIZE = int(os.environ.get("PROJECT_MEMORY_POOL_SIZE", "5"))
 RATE_LIMIT = int(os.environ.get("PROJECT_MEMORY_RATE_LIMIT", "100"))  # ops per minute
 MAX_STRING_LENGTH = 10000  # Maximum length for any string input
 
+
+# ============================================================================
+# Structured Error Response System
+# ============================================================================
+# All error responses follow a consistent format for easier debugging and
+# integration. The format includes:
+# - error_code: Machine-readable error identifier (e.g., "VALIDATION_ERROR")
+# - message: Human-readable error description
+# - request_id: Unique identifier for log correlation
+# - details: Optional additional context
+#
+# Error Codes:
+#   VALIDATION_ERROR  - Input validation failed (missing/invalid parameters)
+#   RATE_LIMIT_ERROR  - Rate limit exceeded
+#   SIZE_LIMIT_ERROR  - Payload or data size exceeded
+#   NOT_FOUND_ERROR   - Requested resource not found
+#   PARSE_ERROR       - JSON parsing or format error
+#   INTERNAL_ERROR    - Unexpected server error
+#   AUTH_ERROR        - Authentication/authorization error
+#   UNKNOWN_TOOL      - Unknown tool name requested
+
+
+def format_error(
+    error_code: str,
+    message: str,
+    request_id: str,
+    details: Optional[str] = None
+) -> str:
+    """
+    Format an error response with consistent structure.
+
+    Args:
+        error_code: Machine-readable error identifier (e.g., "VALIDATION_ERROR")
+        message: Human-readable error description
+        request_id: Unique request identifier for log correlation
+        details: Optional additional context or suggestions
+
+    Returns:
+        Formatted error string for TextContent
+
+    Example:
+        >>> format_error("VALIDATION_ERROR", "key is required", "abc-123", "Provide a non-empty key")
+        "❌ Error [VALIDATION_ERROR]: key is required\\n   Request ID: abc-123\\n   Details: Provide a non-empty key"
+    """
+    error_str = f"❌ Error [{error_code}]: {message}\n   Request ID: {request_id}"
+    if details:
+        error_str += f"\n   Details: {details}"
+    return error_str
+
+
 # Import payload limits to prevent memory exhaustion attacks
+# MAX_IMPORT_JSON_SIZE: Maximum size of import JSON string in bytes (default: 10MB)
+#   - Checked BEFORE JSON parsing to prevent memory exhaustion from malicious payloads
+#   - 10MB is generous for typical use cases (1000 decisions ~= 1-2MB)
 # MAX_IMPORT_DECISIONS: Maximum decisions allowed in a single import (default: 10000)
 # MAX_IMPORT_PATTERNS: Maximum patterns allowed in a single import (default: 1000)
 # MAX_IMPORT_CONTEXT_KEYS: Maximum context keys allowed in a single import (default: 500)
+MAX_IMPORT_JSON_SIZE = int(os.environ.get("PROJECT_MEMORY_MAX_IMPORT_JSON_SIZE", str(10 * 1024 * 1024)))  # 10MB
 MAX_IMPORT_DECISIONS = int(os.environ.get("PROJECT_MEMORY_MAX_IMPORT_DECISIONS", "10000"))
 MAX_IMPORT_PATTERNS = int(os.environ.get("PROJECT_MEMORY_MAX_IMPORT_PATTERNS", "1000"))
 MAX_IMPORT_CONTEXT_KEYS = int(os.environ.get("PROJECT_MEMORY_MAX_IMPORT_CONTEXT_KEYS", "500"))
@@ -272,6 +326,25 @@ def validate_import_schema(data: dict) -> tuple[bool, str]:
 
 # Purge confirmation tokens (thread-safe)
 # Token format: "PURGE-{random_hex}" with 60 second expiry
+#
+# Security Design Notes:
+# ----------------------
+# The two-step purge process provides protection against accidental data loss:
+# 1. First call: Generates a unique token with 60-second TTL
+# 2. Second call: Must provide the exact token to confirm deletion
+#
+# Timing Considerations:
+# - There is a small window between token generation and validation where the
+#   token could expire (if user waits >60 seconds between calls)
+# - This is intentional: it forces deliberate action within a reasonable timeframe
+# - The 60-second TTL balances security (preventing stale confirmations) with
+#   usability (giving users time to review the warning and confirm)
+# - If the token expires, the user simply needs to initiate a new purge request
+#
+# Thread Safety:
+# - All token operations are protected by _purge_token_lock
+# - validate_and_clear_purge_token() is atomic to prevent race conditions
+#   between reading the expected token and clearing it
 _purge_token_lock = threading.Lock()
 _pending_purge_token: Optional[str] = None
 _purge_token_expires: float = 0
@@ -586,7 +659,41 @@ class ConnectionPool:
                 self._return_connection(conn)
 
     def get_pool_stats(self) -> dict:
-        """Get connection pool statistics for monitoring."""
+        """Get connection pool statistics for monitoring.
+
+        Security Considerations:
+        -------------------------
+        These statistics are intended for operational monitoring and debugging.
+        In standard MCP deployments, they are only accessible to authenticated
+        clients (Claude). However, in security-sensitive environments, consider:
+
+        1. **exhaustion_count**: Reveals aggregate load patterns. An attacker
+           monitoring this value over time could infer usage patterns. For
+           high-security deployments, consider:
+           - Omitting this field when serving external metrics
+           - Using rate limiting on metrics endpoints
+           - Restricting metrics access to internal networks
+
+        2. **available connections**: Real-time availability could be used for
+           timing attacks to determine optimal attack windows. The jitter on
+           warning intervals (see get_connection) mitigates some timing vectors.
+
+        3. **temp_connections_created**: Cumulative count - less sensitive than
+           real-time values but still reveals historical load patterns.
+
+        For most deployments (single-user, internal team), these metrics pose
+        minimal risk and provide valuable operational insight.
+
+        Returns:
+            dict: Pool statistics with keys:
+                - pool_size: Configured pool size
+                - available: Currently available connections
+                - exhaustion_count: Times pool was exhausted (security note above)
+                - temp_connections_created: Total temp connections created
+                - active_temp_connections: Currently active temp connections
+                - max_temp_connections: Maximum allowed temp connections
+                - initialized: Whether pool is initialized
+        """
         return {
             "pool_size": self.pool_size,
             "available": self._pool.qsize() if self._initialized else 0,
@@ -602,6 +709,18 @@ class ConnectionPool:
 
         Returns metrics in the standard Prometheus exposition format for easy
         integration with monitoring systems like Prometheus, Grafana, etc.
+
+        Security Note:
+        --------------
+        If exposing these metrics externally (e.g., via /metrics endpoint),
+        ensure proper authentication and access controls. The exhaustion
+        counter and availability gauges could reveal operational patterns.
+        See get_pool_stats() docstring for detailed security considerations.
+
+        For security-sensitive deployments, consider:
+        - Serving metrics only on internal/localhost interfaces
+        - Adding authentication to metrics endpoints
+        - Sampling or aggregating metrics to reduce timing precision
 
         @see https://prometheus.io/docs/instrumenting/exposition_formats/
         @see https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md
@@ -786,6 +905,13 @@ class PersistentRateLimiter(RateLimiter):
     def __init__(self, db_path: Path, max_ops: int = 100, window_seconds: int = 60):
         super().__init__(max_ops, window_seconds)
         self.db_path = db_path
+        # Time-based cleanup scheduling (every 5 minutes by default)
+        # This replaces the previous random 1% chance approach for deterministic cleanup
+        self._cleanup_interval_seconds = int(os.environ.get(
+            "PROJECT_MEMORY_RATE_LIMIT_CLEANUP_INTERVAL",
+            "300"  # 5 minutes
+        ))
+        self._last_cleanup_time = time.time()
         self._init_db()
         self._load_from_db()
 
@@ -870,8 +996,11 @@ class PersistentRateLimiter(RateLimiter):
         # Persist outside the lock to avoid blocking
         self._persist_operation(now)
 
-        # Periodic DB cleanup (every 100 ops or so)
-        if random.random() < 0.01:
+        # Periodic DB cleanup using time-based scheduling
+        # Clean up every 5 minutes (300 seconds) instead of random 1% chance
+        # This is deterministic and ensures cleanup happens at regular intervals
+        if now - self._last_cleanup_time >= self._cleanup_interval_seconds:
+            self._last_cleanup_time = now
             self._cleanup_db(cutoff)
 
         return True
@@ -1856,7 +1985,12 @@ async def call_tool(name: str, arguments: dict) -> list:
             rationale = arguments.get("rationale", "")
 
             if not decision or not rationale:
-                return [TextContent(type="text", text="❌ Error: decision and rationale are required")]
+                return [TextContent(type="text", text=format_error(
+                    "VALIDATION_ERROR",
+                    "decision and rationale are required",
+                    request_id,
+                    "Both 'decision' and 'rationale' parameters must be non-empty strings"
+                ))]
 
             decision_id = database.add_decision(
                 decision=decision,
@@ -1903,13 +2037,20 @@ async def call_tool(name: str, arguments: dict) -> list:
             description = arguments.get("description", "")
 
             if not pattern_name or not description:
-                return [TextContent(type="text", text="❌ Error: name and description are required")]
+                return [TextContent(type="text", text=format_error(
+                    "VALIDATION_ERROR",
+                    "name and description are required",
+                    request_id,
+                    "Both 'name' and 'description' parameters must be non-empty strings"
+                ))]
 
             if not validate_key(pattern_name):
-                return [TextContent(
-                    type="text",
-                    text="❌ Error: name must be alphanumeric (underscores, hyphens, dots allowed)"
-                )]
+                return [TextContent(type="text", text=format_error(
+                    "VALIDATION_ERROR",
+                    "invalid pattern name format",
+                    request_id,
+                    "Name must be alphanumeric (underscores, hyphens, dots allowed)"
+                ))]
 
             success = database.upsert_pattern(
                 name=pattern_name,
@@ -1922,7 +2063,12 @@ async def call_tool(name: str, arguments: dict) -> list:
                 logger.info(f"Stored pattern: {pattern_name}")
                 return [TextContent(type="text", text=f"✓ Pattern stored: {pattern_name}")]
             else:
-                return [TextContent(type="text", text="❌ Error: Failed to store pattern")]
+                return [TextContent(type="text", text=format_error(
+                    "INTERNAL_ERROR",
+                    "failed to store pattern",
+                    request_id,
+                    "Database operation failed. Check server logs for details."
+                ))]
 
         elif name == "get_patterns":
             patterns = database.get_patterns()
@@ -1947,13 +2093,20 @@ async def call_tool(name: str, arguments: dict) -> list:
             value = arguments.get("value", "")
 
             if not key or not value:
-                return [TextContent(type="text", text="❌ Error: key and value are required")]
+                return [TextContent(type="text", text=format_error(
+                    "VALIDATION_ERROR",
+                    "key and value are required",
+                    request_id,
+                    "Both 'key' and 'value' parameters must be non-empty strings"
+                ))]
 
             if not validate_key(key):
-                return [TextContent(
-                    type="text",
-                    text="❌ Error: key must be alphanumeric (underscores, hyphens, dots allowed)"
-                )]
+                return [TextContent(type="text", text=format_error(
+                    "VALIDATION_ERROR",
+                    "invalid key format",
+                    request_id,
+                    "Key must be alphanumeric (underscores, hyphens, dots allowed)"
+                ))]
 
             success = database.set_context(key, value)
 
@@ -1961,7 +2114,12 @@ async def call_tool(name: str, arguments: dict) -> list:
                 logger.info(f"Set context: {key}")
                 return [TextContent(type="text", text=f"✓ Context set: {key}")]
             else:
-                return [TextContent(type="text", text="❌ Error: Failed to set context")]
+                return [TextContent(type="text", text=format_error(
+                    "INTERNAL_ERROR",
+                    "failed to set context",
+                    request_id,
+                    "Database operation failed. Check server logs for details."
+                ))]
 
         elif name == "get_context":
             context = database.get_context()
@@ -2008,12 +2166,39 @@ async def call_tool(name: str, arguments: dict) -> list:
             merge = arguments.get("merge", True)
 
             if not data_str:
-                return [TextContent(type="text", text="❌ Error: data is required")]
+                return [TextContent(type="text", text=format_error(
+                    "VALIDATION_ERROR",
+                    "data parameter is required",
+                    request_id,
+                    "Provide JSON data from a previous export_memory call"
+                ))]
+
+            # Check JSON size BEFORE parsing to prevent memory exhaustion attacks
+            # This catches maliciously large payloads before they consume memory
+            data_size = len(data_str.encode('utf-8'))
+            if data_size > MAX_IMPORT_JSON_SIZE:
+                size_mb = data_size / (1024 * 1024)
+                limit_mb = MAX_IMPORT_JSON_SIZE / (1024 * 1024)
+                logger.warning(
+                    f"Import rejected: payload too large ({size_mb:.2f}MB > {limit_mb:.2f}MB limit). "
+                    f"Request ID: {request_id}"
+                )
+                return [TextContent(type="text", text=format_error(
+                    "SIZE_LIMIT_ERROR",
+                    f"import data too large ({size_mb:.1f}MB exceeds {limit_mb:.0f}MB limit)",
+                    request_id,
+                    "Set PROJECT_MEMORY_MAX_IMPORT_JSON_SIZE environment variable to increase limit"
+                ))]
 
             try:
                 import_data = json.loads(data_str)
             except json.JSONDecodeError as e:
-                return [TextContent(type="text", text=f"❌ Error: Invalid JSON - {str(e)}")]
+                return [TextContent(type="text", text=format_error(
+                    "PARSE_ERROR",
+                    f"invalid JSON: {str(e)}",
+                    request_id,
+                    "Ensure the data parameter contains valid JSON from export_memory"
+                ))]
 
             try:
                 stats = database.import_data(import_data, merge=merge)
@@ -2029,7 +2214,12 @@ async def call_tool(name: str, arguments: dict) -> list:
                 logger.info(f"Imported memory: {stats}")
                 return [TextContent(type="text", text=output)]
             except ValueError as e:
-                return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
+                return [TextContent(type="text", text=format_error(
+                    "VALIDATION_ERROR",
+                    str(e),
+                    request_id,
+                    "Check import data structure matches expected schema"
+                ))]
 
         elif name == "health_check":
             health = database.health_check()
@@ -2103,11 +2293,21 @@ async def call_tool(name: str, arguments: dict) -> list:
             return [TextContent(type="text", text=output)]
 
         else:
-            return [TextContent(type="text", text=f"❌ Unknown tool: {name}")]
+            return [TextContent(type="text", text=format_error(
+                "UNKNOWN_TOOL",
+                f"unknown tool: {name}",
+                request_id,
+                "Available tools: remember_decision, recall_decisions, store_pattern, get_patterns, set_context, get_context, memory_stats, export_memory, import_memory, health_check, purge_memory"
+            ))]
 
     except Exception as e:
-        logger.exception(f"Error in tool {name}")
-        return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
+        logger.exception(f"Error in tool {name}. Request ID: {request_id}")
+        return [TextContent(type="text", text=format_error(
+            "INTERNAL_ERROR",
+            str(e),
+            request_id,
+            "An unexpected error occurred. Check server logs for details."
+        ))]
 
 
 async def main():
@@ -2115,8 +2315,12 @@ async def main():
     logger.info(f"Starting Project Memory MCP Server v{VERSION}")
     logger.info(f"Database: {get_db_path()}")
     logger.info(f"Limits: {MAX_DECISIONS} decisions, {MAX_PATTERNS} patterns, {MAX_CONTEXT_KEYS} context keys")
+    logger.info(f"Import limits: {MAX_IMPORT_JSON_SIZE // (1024*1024)}MB max JSON, {MAX_IMPORT_DECISIONS} decisions, {MAX_IMPORT_PATTERNS} patterns")
     persist_str = "persistent" if PERSIST_RATE_LIMIT else "in-memory"
+    cleanup_interval = int(os.environ.get("PROJECT_MEMORY_RATE_LIMIT_CLEANUP_INTERVAL", "300"))
     logger.info(f"Rate limit: {RATE_LIMIT} ops/min ({persist_str}), Pool size: {POOL_SIZE}")
+    if PERSIST_RATE_LIMIT:
+        logger.info(f"Rate limit DB cleanup interval: {cleanup_interval}s")
 
     # Set up graceful shutdown
     import signal

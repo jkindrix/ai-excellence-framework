@@ -11,7 +11,29 @@ import chalk from 'chalk';
 /**
  * Simple cache for parsed CLAUDE.md content.
  * Uses content hash as key to detect changes.
+ *
+ * Thread Safety Assumptions:
+ * --------------------------
+ * This cache is designed for Node.js's single-threaded event loop model:
+ * - All JavaScript in Node.js runs on a single thread (the main event loop)
+ * - Map operations (get, set, delete) complete synchronously and atomically
+ * - No concurrent access issues exist in standard Node.js usage
+ *
+ * Worker Thread Considerations:
+ * If this module is used in Node.js worker threads (worker_threads module),
+ * each worker gets its own isolated copy of the module and cache. This is
+ * safe but means:
+ * - Each worker maintains its own cache (no sharing)
+ * - Memory usage multiplies with worker count
+ * - Cache hits are worker-local only
+ *
+ * For shared caching across workers, consider:
+ * - SharedArrayBuffer with Atomics (complex, not recommended for this use case)
+ * - External cache (Redis, memcached) for distributed scenarios
+ * - MessageChannel for cache invalidation signals between workers
+ *
  * @type {Map<string, {context: object, timestamp: number, lastAccess: number}>}
+ * @see https://nodejs.org/api/worker_threads.html - Worker threads documentation
  */
 const parseCache = new Map();
 

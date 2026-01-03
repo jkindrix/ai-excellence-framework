@@ -405,21 +405,31 @@ export function listInstalledAgents(cwd = process.cwd()) {
 /**
  * Read and parse CLAUDE.md (synchronous version)
  *
- * **WARNING:** This function uses synchronous I/O which blocks the event loop.
- * It is retained only for backward compatibility with existing integrations.
+ * @deprecated **DEPRECATED - WILL BE REMOVED IN v2.0.0**
+ *
+ * **Timeline:**
+ * - v1.0.0: Deprecated, async version introduced
+ * - v1.5.0: Deprecation warning emitted at runtime (current)
+ * - v2.0.0: Function will be removed entirely
+ *
+ * **Why deprecated:** This function uses synchronous I/O which blocks the event loop,
+ * causing performance issues in async contexts. The async version provides identical
+ * functionality without blocking.
+ *
+ * **Migration:** Replace all calls with the async version:
+ * ```javascript
+ * // Before (deprecated):
+ * const parsed = readClaudeMd('/path/to/project');
+ *
+ * // After (recommended):
+ * const parsed = await readClaudeMdAsync('/path/to/project');
+ * ```
  *
  * @param {string} [cwd=process.cwd()] - Directory to read from
  * @returns {{raw: string, sections: Object.<string, string>}|null} Parsed CLAUDE.md or null
- * @deprecated Since v1.0.0. Use {@link readClaudeMdAsync} instead for better performance.
- *   This function will be removed in v2.0.0.
- * @internal This function is not recommended for new code. It remains exported
- *   only for backward compatibility and may be removed in future major versions.
- * @example
- * // Preferred: Use async version
- * const parsed = await readClaudeMdAsync('/path/to/project');
- *
- * // Legacy: Synchronous version (deprecated)
- * const parsed = readClaudeMd('/path/to/project');
+ * @throws {Error} If file exists but cannot be read (permissions, encoding issues)
+ * @see {@link readClaudeMdAsync} - The recommended async replacement
+ * @see https://nodejs.org/api/deprecations.html - Node.js deprecation guidelines
  */
 export function readClaudeMd(cwd = process.cwd()) {
   // Emit deprecation warning (only once per process)
@@ -530,7 +540,15 @@ export function parseClaudeMd(content) {
  * ReDoS Prevention: All patterns use bounded quantifiers (e.g., {16,256} instead of {16,})
  * to prevent catastrophic backtracking on malformed input. Upper bounds are set based on
  * typical maximum lengths for each credential type plus reasonable buffer.
- * @see https://owasp.org/www-community/attacks/Regular_expression_Denial_of_Service_-_ReDoS
+ *
+ * Official Documentation Sources:
+ * @see https://owasp.org/www-community/attacks/Regular_expression_Denial_of_Service_-_ReDoS - ReDoS prevention
+ * @see https://platform.openai.com/docs/api-reference/authentication - OpenAI API keys
+ * @see https://docs.anthropic.com/en/api/getting-started - Anthropic API keys (sk-ant-api03-*)
+ * @see https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/ - GitHub token formats
+ * @see https://docs.stripe.com/keys - Stripe API key formats
+ * @see https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html - AWS access keys
+ * @see https://summitroute.com/blog/2018/06/20/aws_security_credential_formats/ - AWS credential formats (AKIA/ASIA)
  *
  * @type {Readonly<Object.<string, ReadonlyArray<{name: string, pattern: RegExp}>>>}
  * @see detectSecrets for usage
@@ -546,12 +564,19 @@ export const SECRET_PATTERNS = Object.freeze({
   ]),
 
   // AI/ML API Keys (2024-2025 formats)
-  // OpenAI: sk-[48 chars] or sk-proj-[variable], Anthropic: sk-ant-api03-[93+ chars]
-  // Google: AIza[35 chars], xAI: xai-[variable], Perplexity: pplx-[variable]
-  // Hugging Face: hf_[variable], Cohere: co-[variable], Replicate: r8_[variable]
-  // @see https://docs.x.ai/docs/overview (xAI Grok)
-  // @see https://docs.perplexity.ai/guides/api-key-management (Perplexity)
-  // @see https://huggingface.co/docs/hub/en/security-tokens (Hugging Face)
+  // OpenAI: sk-[48 chars], sk-proj-[variable], sk-admin-[variable]
+  //   @see https://platform.openai.com/docs/api-reference/authentication
+  //   @see https://platform.openai.com/docs/api-reference/project-api-keys
+  // Anthropic: sk-ant-api03-[93+ chars]
+  //   @see https://docs.anthropic.com/en/api/getting-started
+  // Google: AIza[35 chars]
+  //   @see https://cloud.google.com/docs/authentication/api-keys
+  // xAI: xai-[variable]
+  //   @see https://docs.x.ai/docs/overview
+  // Perplexity: pplx-[variable]
+  //   @see https://docs.perplexity.ai/guides/api-key-management
+  // Hugging Face: hf_[variable]
+  //   @see https://huggingface.co/docs/hub/en/security-tokens
   ai_ml: Object.freeze([
     Object.freeze({ name: 'OpenAI Key', pattern: /sk-[a-zA-Z0-9]{32,128}/g }),
     Object.freeze({ name: 'OpenAI Project Key', pattern: /sk-proj-[a-zA-Z0-9_-]{32,200}/g }),
@@ -566,30 +591,47 @@ export const SECRET_PATTERNS = Object.freeze({
   ]),
 
   // Cloud Provider Keys
+  // AWS: AKIA (long-term IAM) or ASIA (temporary STS credentials) + 16 chars
+  //   @see https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html
+  //   @see https://docs.aws.amazon.com/STS/latest/APIReference/API_GetAccessKeyInfo.html
+  //   @see https://summitroute.com/blog/2018/06/20/aws_security_credential_formats/
+  // Azure: Connection strings with AccountName (3-24 chars) and AccountKey (88 char base64)
+  //   @see https://docs.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string
+  // GCP: Service account JSON files with "type": "service_account"
+  //   @see https://cloud.google.com/iam/docs/keys-create-delete
   cloud: Object.freeze([
     Object.freeze({ name: 'AWS Access Key', pattern: /AKIA[0-9A-Z]{16}/g }),
-    // AWS STS temporary credentials use ASIA prefix (Security Token Service)
-    // @see https://summitroute.com/blog/2018/06/20/aws_security_credential_formats/
     Object.freeze({ name: 'AWS STS Key', pattern: /ASIA[0-9A-Z]{16}/g }),
     Object.freeze({ name: 'AWS Secret Key', pattern: /aws[_-]?secret[_-]?access[_-]?key\s{0,5}[:=]\s{0,5}["'][a-zA-Z0-9/+=]{40}["']/gi }),
-    // Azure account names: 3-24 chars; account keys: 88 chars base64
     Object.freeze({ name: 'Azure Connection String', pattern: /DefaultEndpointsProtocol=https;AccountName=[^;]{3,24};AccountKey=[a-zA-Z0-9+/=]{88}/g }),
     Object.freeze({ name: 'GCP Service Account', pattern: /"type"\s{0,5}:\s{0,5}"service_account"/g })
   ]),
 
   // Version Control Systems
+  // GitHub: ghp_ (PAT), gho_ (OAuth), ghu_ (user-to-server), ghs_ (server-to-server), ghr_ (refresh)
+  //   Format: prefix + 36 alphanumeric chars with 32-bit checksum in last 6 chars
+  //   @see https://github.blog/engineering/platform-security/behind-githubs-new-authentication-token-formats/
+  //   @see https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
+  // GitLab: glpat-[20-26 chars]
+  //   @see https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html
+  // Bitbucket: ATBB[32 chars]
+  //   @see https://support.atlassian.com/bitbucket-cloud/docs/app-passwords/
   vcs: Object.freeze([
     Object.freeze({ name: 'GitHub Token', pattern: /ghp_[a-zA-Z0-9]{36}/g }),
     Object.freeze({ name: 'GitHub OAuth', pattern: /gho_[a-zA-Z0-9]{36}/g }),
     Object.freeze({ name: 'GitHub App Token', pattern: /ghu_[a-zA-Z0-9]{36}/g }),
     Object.freeze({ name: 'GitHub Refresh Token', pattern: /ghr_[a-zA-Z0-9]{36}/g }),
-    // GitLab PATs are typically 20-26 chars
     Object.freeze({ name: 'GitLab Token', pattern: /glpat-[a-zA-Z0-9-]{20,64}/g }),
     Object.freeze({ name: 'Bitbucket Token', pattern: /ATBB[a-zA-Z0-9]{32}/g })
   ]),
 
   // Communication Platforms
-  // Slack tokens: typically 50-80 chars total; webhooks have bounded segment lengths
+  // Slack: xoxb (bot), xoxp (user), xoxa (app), xoxr (refresh), xoxs (session)
+  //   @see https://api.slack.com/authentication/token-types
+  // Discord: Webhook format includes channel ID (17-20 digits) and token (60-80 chars)
+  //   @see https://discord.com/developers/docs/resources/webhook
+  // Twilio: Account SID (AC...) and Auth Token (32 hex chars)
+  //   @see https://www.twilio.com/docs/iam/keys/api-key
   communication: Object.freeze([
     Object.freeze({ name: 'Slack Token', pattern: /xox[baprs]-[a-zA-Z0-9-]{10,255}/g }),
     Object.freeze({ name: 'Slack Webhook', pattern: /hooks\.slack\.com\/services\/T[a-zA-Z0-9_]{8,12}\/B[a-zA-Z0-9_]{8,12}\/[a-zA-Z0-9_]{20,30}/g }),
@@ -599,7 +641,11 @@ export const SECRET_PATTERNS = Object.freeze({
   ]),
 
   // Payment Providers
-  // Stripe keys: 24-256 chars after prefix; PayPal secrets: 32-80 chars
+  // Stripe: sk_live_/sk_test_ (secret), pk_live_/pk_test_ (publishable)
+  //   @see https://docs.stripe.com/keys
+  //   @see https://docs.stripe.com/api/authentication
+  // PayPal: Client ID and Secret from developer portal
+  //   @see https://developer.paypal.com/api/rest/authentication/
   payment: Object.freeze([
     Object.freeze({ name: 'Stripe Live Key', pattern: /sk_live_[a-zA-Z0-9]{24,256}/g }),
     Object.freeze({ name: 'Stripe Test Key', pattern: /sk_test_[a-zA-Z0-9]{24,256}/g }),
@@ -608,7 +654,12 @@ export const SECRET_PATTERNS = Object.freeze({
   ]),
 
   // Database Connection Strings
-  // Note: Length limits {1,100} added to prevent ReDoS on malformed input
+  // Standard URI format: protocol://username:password@host:port/database
+  // Length limits {1,100} added to prevent ReDoS on malformed input
+  //   @see https://www.mongodb.com/docs/manual/reference/connection-string/
+  //   @see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING
+  //   @see https://dev.mysql.com/doc/connector-python/en/connector-python-connectargs.html
+  //   @see https://redis.io/docs/connect/clients/
   database: Object.freeze([
     Object.freeze({ name: 'MongoDB URI', pattern: /mongodb(\+srv)?:\/\/[^:\s]{1,100}:[^@\s]{1,100}@[^\s]{1,200}/g }),
     Object.freeze({ name: 'PostgreSQL URI', pattern: /postgres(ql)?:\/\/[^:\s]{1,100}:[^@\s]{1,100}@[^\s]{1,200}/g }),
@@ -617,27 +668,34 @@ export const SECRET_PATTERNS = Object.freeze({
   ]),
 
   // Package Registry Tokens
-  // npm tokens: 36 chars; PyPI tokens: 100-200 chars (project scoped are longer)
+  // npm: npm_[36 chars] - granular access tokens
+  //   @see https://docs.npmjs.com/creating-and-viewing-access-tokens
+  // PyPI: pypi-[100-200 chars] - API tokens (project-scoped are longer)
+  //   @see https://pypi.org/help/#apitoken
   registry: Object.freeze([
     Object.freeze({ name: 'npm Token', pattern: /npm_[a-zA-Z0-9]{36}/g }),
     Object.freeze({ name: 'PyPI Token', pattern: /pypi-[a-zA-Z0-9_-]{100,256}/g })
   ]),
 
   // Email/Marketing Services
+  // SendGrid: SG.[22 chars].[43 chars] - API keys
+  //   @see https://docs.sendgrid.com/ui/account-and-settings/api-keys
+  // Mailchimp: [32 hex chars]-us[datacenter number]
+  //   @see https://mailchimp.com/developer/marketing/guides/quick-start/
   email: Object.freeze([
     Object.freeze({ name: 'SendGrid Key', pattern: /SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}/g }),
     Object.freeze({ name: 'Mailchimp Key', pattern: /[a-f0-9]{32}-us[0-9]{1,2}/g })
   ]),
 
   // Cryptographic Material
+  // Private keys: PEM format with algorithm-specific headers
+  //   @see https://www.rfc-editor.org/rfc/rfc7468 - PEM format specification
+  // JWT: Header.Payload.Signature (base64url encoded)
+  //   @see https://jwt.io - JWT structure reference
+  //   @see https://www.rfc-editor.org/rfc/rfc7519 - JWT specification
+  //   Signature lengths: HS256: 43, RS256: 342, EdDSA: 86-88
   crypto: Object.freeze([
     Object.freeze({ name: 'Private Key', pattern: /-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g }),
-    // JWT pattern with min/max lengths to reduce false positives and prevent ReDoS:
-    // - Header (eyJ...): 17-200 chars (typical: 30-100, allows for custom claims)
-    // - Payload (eyJ...): 17-5000 chars (typical: 50-2000, allows for large payloads)
-    // - Signature: 40-500 chars (HS256: 43, RS256: 342, EdDSA: 86-88)
-    // Upper bounds prevent catastrophic backtracking on malformed input
-    // @see https://jwt.io for JWT structure reference
     Object.freeze({ name: 'JWT Token', pattern: /eyJ[a-zA-Z0-9_-]{17,200}\.eyJ[a-zA-Z0-9_-]{17,5000}\.[a-zA-Z0-9_-]{40,500}/g })
   ])
 });

@@ -304,6 +304,16 @@ export const ERROR_CODES = {
     description: 'Interactive prompts not available',
     suggestion: 'Use --yes flag for non-interactive mode, or run in an interactive terminal'
   },
+  'AIX-INIT-110': {
+    category: 'Initialization',
+    description: 'Invalid option key detected (prototype pollution prevention)',
+    suggestion: 'Option keys must not include __proto__, constructor, or prototype'
+  },
+  'AIX-INIT-111': {
+    category: 'Initialization',
+    description: 'Invalid preset name format',
+    suggestion: 'Preset names must be alphanumeric (a-z, 0-9) and under 50 characters'
+  },
 
   // Validation Errors (200-299)
   'AIX-VALID-200': {
