@@ -128,6 +128,19 @@ POOL_SIZE = int(os.environ.get("PROJECT_MEMORY_POOL_SIZE", "5"))
 RATE_LIMIT = int(os.environ.get("PROJECT_MEMORY_RATE_LIMIT", "100"))  # ops per minute
 MAX_STRING_LENGTH = 10000  # Maximum length for any string input
 
+# Security configuration
+# Controls whether detailed stats are exposed via health/metrics endpoints.
+# Set to "false" in multi-tenant or security-sensitive environments to prevent
+# leaking usage patterns and load information.
+# Default: "true" (expose stats for debugging/monitoring)
+EXPOSE_STATS = os.environ.get("PROJECT_MEMORY_EXPOSE_STATS", "true").lower() == "true"
+
+# Health logging configuration
+# Set to number of seconds between health log entries (0 = disabled)
+# Useful for production monitoring and detecting resource leaks
+# Default: "0" (disabled)
+HEALTH_LOG_INTERVAL = int(os.environ.get("PROJECT_MEMORY_HEALTH_LOG_INTERVAL", "0"))
+
 
 # ============================================================================
 # Structured Error Response System
@@ -562,6 +575,9 @@ class ConnectionPool:
     # Maximum requests that can wait in queue (backpressure)
     MAX_WAIT_QUEUE_SIZE = 50
 
+    # Minimum time between warmup calls (seconds) to prevent abuse
+    WARMUP_COOLDOWN_SECONDS = 60.0
+
     def __init__(self, db_path: Path, pool_size: int = 5):
         self.db_path = db_path
         self.pool_size = pool_size
@@ -579,6 +595,10 @@ class ConnectionPool:
         self._waiting_count = 0
         self._waiting_lock = threading.Lock()
         self._pool_available = threading.Condition(self._waiting_lock)
+        # Warmup rate limiting
+        self._last_warmup_time: float = 0.0
+        self._warmup_count: int = 0
+        self._warmup_lock = threading.Lock()
 
     def _create_connection(self) -> sqlite3.Connection:
         """Create a new database connection with optimal settings.
@@ -630,30 +650,64 @@ class ConnectionPool:
             self._initialized = True
             logger.info(f"Connection pool initialized with {self.pool_size} connections")
 
-    def warmup(self) -> dict:
+    def warmup(self, force: bool = False) -> dict:
         """Warm up the connection pool by initializing and validating all connections.
 
         This is useful for latency-sensitive deployments where you want to avoid
         the connection creation overhead on the first request. Call this during
         server startup to pre-establish all database connections.
 
+        Rate Limiting:
+        - Warmup can only be called once per WARMUP_COOLDOWN_SECONDS (default: 60s)
+        - Subsequent calls within the cooldown period return a "skipped" result
+        - This prevents abuse in multi-tenant or untrusted client scenarios
+        - Use force=True to bypass cooldown (internal use only)
+
         The warmup process:
-        1. Ensures pool is initialized
-        2. Borrows each connection from the pool
-        3. Validates each connection with a simple query
-        4. Returns connections to the pool
+        1. Checks rate limit cooldown
+        2. Ensures pool is initialized
+        3. Borrows each connection from the pool
+        4. Validates each connection with a simple query
+        5. Returns connections to the pool
 
         Enable automatic warmup at startup via:
             PROJECT_MEMORY_POOL_WARMUP=true
+
+        Args:
+            force: If True, bypass cooldown check (use only for internal operations)
 
         Returns:
             dict: Warmup statistics with keys:
                 - connections_warmed: Number of connections validated
                 - warmup_time_ms: Time taken in milliseconds
                 - errors: Number of validation errors (if any)
+                - skipped: True if warmup was skipped due to cooldown
+                - cooldown_remaining: Seconds until next warmup allowed (if skipped)
         """
-        import time as warmup_time
-        start = warmup_time.time()
+        now = time.time()
+
+        # Check rate limit with lock for thread safety
+        with self._warmup_lock:
+            time_since_last = now - self._last_warmup_time
+            if not force and time_since_last < self.WARMUP_COOLDOWN_SECONDS:
+                remaining = self.WARMUP_COOLDOWN_SECONDS - time_since_last
+                logger.debug(
+                    f"Warmup skipped: cooldown active ({remaining:.1f}s remaining)"
+                )
+                return {
+                    "connections_warmed": 0,
+                    "warmup_time_ms": 0,
+                    "errors": 0,
+                    "skipped": True,
+                    "cooldown_remaining": round(remaining, 1),
+                    "total_warmups": self._warmup_count
+                }
+            # Update last warmup time while holding lock
+            self._last_warmup_time = now
+            self._warmup_count += 1
+            current_warmup_count = self._warmup_count
+
+        start = time.time()
 
         # Ensure pool is initialized
         if not self._initialized:
@@ -680,12 +734,14 @@ class ConnectionPool:
             for conn in borrowed:
                 self._return_connection(conn)
 
-        elapsed_ms = (warmup_time.time() - start) * 1000
+        elapsed_ms = (time.time() - start) * 1000
 
         result = {
             "connections_warmed": connections_warmed,
             "warmup_time_ms": round(elapsed_ms, 2),
-            "errors": errors
+            "errors": errors,
+            "skipped": False,
+            "total_warmups": current_warmup_count
         }
 
         logger.info(f"Connection pool warmup complete: {result}")
@@ -849,7 +905,7 @@ class ConnectionPool:
             if conn is not None and not is_temp_connection:
                 self._return_connection(conn)
 
-    def get_pool_stats(self) -> dict:
+    def get_pool_stats(self, include_sensitive: bool = True) -> dict:
         """Get connection pool statistics for monitoring.
 
         Security Considerations:
@@ -875,8 +931,23 @@ class ConnectionPool:
         For most deployments (single-user, internal team), these metrics pose
         minimal risk and provide valuable operational insight.
 
+        Configuration:
+        ---------------
+        Set PROJECT_MEMORY_EXPOSE_STATS=false to disable detailed stats exposure.
+        When disabled, only basic status (initialized, pool_size) is returned.
+
+        Args:
+            include_sensitive: If False, return only non-sensitive fields.
+                               Defaults to True but can be overridden by
+                               PROJECT_MEMORY_EXPOSE_STATS environment variable.
+
         Returns:
-            dict: Pool statistics with keys:
+            dict: Pool statistics. When sensitive stats are disabled:
+                - pool_size: Configured pool size
+                - initialized: Whether pool is initialized
+                - stats_redacted: True (indicates stats are redacted)
+
+            When sensitive stats are enabled (full stats):
                 - pool_size: Configured pool size
                 - available: Currently available connections
                 - exhaustion_count: Times pool was exhausted (security note above)
@@ -885,6 +956,16 @@ class ConnectionPool:
                 - max_temp_connections: Maximum allowed temp connections
                 - initialized: Whether pool is initialized
         """
+        # Respect global EXPOSE_STATS setting (can be overridden by argument)
+        expose = include_sensitive and EXPOSE_STATS
+
+        if not expose:
+            return {
+                "pool_size": self.pool_size,
+                "initialized": self._initialized,
+                "stats_redacted": True
+            }
+
         return {
             "pool_size": self.pool_size,
             "available": self._pool.qsize() if self._initialized else 0,
@@ -912,15 +993,36 @@ class ConnectionPool:
         - Serving metrics only on internal/localhost interfaces
         - Adding authentication to metrics endpoints
         - Sampling or aggregating metrics to reduce timing precision
+        - Setting PROJECT_MEMORY_EXPOSE_STATS=false to redact sensitive metrics
 
         @see https://prometheus.io/docs/instrumenting/exposition_formats/
         @see https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md
 
         Returns:
-            str: Metrics in Prometheus exposition format
+            str: Metrics in Prometheus exposition format. When EXPOSE_STATS=false,
+                 only pool_size and initialized metrics are included.
         """
         stats = self.get_pool_stats()
         timestamp_ms = int(time.time() * 1000)
+
+        # Check if stats are redacted (EXPOSE_STATS=false)
+        if stats.get('stats_redacted', False):
+            lines = [
+                "# HELP mcp_pool_size_total Configured size of the connection pool",
+                "# TYPE mcp_pool_size_total gauge",
+                f"mcp_pool_size_total {stats['pool_size']}",
+                "",
+                "# HELP mcp_pool_initialized Connection pool initialization state (1=initialized)",
+                "# TYPE mcp_pool_initialized gauge",
+                f"mcp_pool_initialized {1 if stats['initialized'] else 0}",
+                "",
+                "# HELP mcp_pool_stats_redacted Indicates detailed stats are redacted (1=redacted)",
+                "# TYPE mcp_pool_stats_redacted gauge",
+                "mcp_pool_stats_redacted 1",
+                "",
+                f"# EOF (timestamp: {timestamp_ms})",
+            ]
+            return "\n".join(lines)
 
         lines = [
             "# HELP mcp_pool_size_total Configured size of the connection pool",
@@ -1397,18 +1499,24 @@ def escape_like_pattern(value: str) -> str:
 
     SQLite LIKE patterns use % and _ as wildcards. This function escapes
     these characters so user input is treated literally when used with
-    the ESCAPE '\\' clause.
+    the ESCAPE '!' clause.
+
+    We use '!' as the escape character instead of backslash because:
+    1. Avoids confusion with Python string escaping
+    2. '!' is rarely used in search terms
+    3. Works consistently across all SQLite versions
+    4. Clearer intent in SQL queries
 
     The escape order is critical:
-    1. Escape backslashes first (\ -> \\) so existing backslashes don't
+    1. Escape the escape character first (! -> !!) so existing '!' don't
        interfere with subsequent escape sequences
-    2. Then escape wildcards (% -> \%, _ -> \_)
+    2. Then escape wildcards (% -> !%, _ -> !_)
 
     Examples:
-        Input: "100%"    -> Output: "100\\%"   (matches literal "100%")
-        Input: "C:\\path" -> Output: "C:\\\\path" (matches literal "C:\\path")
-        Input: "\\%"     -> Output: "\\\\\\%"  (matches literal "\\%")
-        Input: "test_1"  -> Output: "test\\_1" (matches literal "test_1")
+        Input: "100%"    -> Output: "100!%"    (matches literal "100%")
+        Input: "test_1"  -> Output: "test!_1"  (matches literal "test_1")
+        Input: "wow!"    -> Output: "wow!!"    (matches literal "wow!")
+        Input: "50% off!" -> Output: "50!% off!!" (matches literal "50% off!")
 
     Args:
         value: The string to escape for use in LIKE patterns
@@ -1417,17 +1525,19 @@ def escape_like_pattern(value: str) -> str:
         The escaped string safe for LIKE pattern matching
 
     Note:
-        Must be used with SQL ESCAPE '\\' clause, e.g.:
-        WHERE column LIKE ? ESCAPE '\\\\'
+        Must be used with SQL ESCAPE '!' clause, e.g.:
+        WHERE column LIKE ? ESCAPE '!'
+
+    @see https://www.sqlite.org/lang_expr.html - SQLite LIKE operator docs
     """
     if not isinstance(value, str):
         value = str(value)
 
     # Escape the escape character first, then the wildcards
-    # Order matters: backslash must be escaped before wildcards
-    value = value.replace('\\', '\\\\')
-    value = value.replace('%', '\\%')
-    value = value.replace('_', '\\_')
+    # Order matters: escape char must be escaped before wildcards
+    value = value.replace('!', '!!')
+    value = value.replace('%', '!%')
+    value = value.replace('_', '!_')
     return value
 
 
@@ -1537,9 +1647,9 @@ class ProjectMemoryDB:
                 pattern = f"%{escaped_keyword}%"
                 cursor = conn.execute("""
                     SELECT * FROM decisions
-                    WHERE decision LIKE ? ESCAPE '\\'
-                       OR rationale LIKE ? ESCAPE '\\'
-                       OR context LIKE ? ESCAPE '\\'
+                    WHERE decision LIKE ? ESCAPE '!'
+                       OR rationale LIKE ? ESCAPE '!'
+                       OR context LIKE ? ESCAPE '!'
                     ORDER BY timestamp DESC LIMIT ?
                 """, (pattern, pattern, pattern, limit))
             else:
@@ -1723,6 +1833,14 @@ class ProjectMemoryDB:
             if not checksum_valid:
                 raise ValueError(f"Import rejected: {checksum_msg}")
             checksum_status = checksum_msg
+
+            # Warn if import data has no checksum (could be tampered or from older export)
+            if checksum_msg == "no_checksum":
+                logger.warning(
+                    "Import data has no checksum - data integrity cannot be verified. "
+                    "This may indicate data from an older export or manual modification. "
+                    "Consider re-exporting with checksums enabled for future imports."
+                )
 
         stats = {"decisions": 0, "patterns": 0, "context": 0, "skipped": 0, "checksum_status": checksum_status}
 
@@ -2648,10 +2766,60 @@ async def main():
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
 
+    # Set up periodic health logging if enabled
+    health_log_task = None
+    if HEALTH_LOG_INTERVAL > 0:
+        async def periodic_health_log():
+            """Log health status periodically for production monitoring."""
+            while True:
+                try:
+                    await asyncio.sleep(HEALTH_LOG_INTERVAL)
+                    health = database.health_check()
+                    stats = database.get_stats()
+
+                    # Build health log entry
+                    log_entry = {
+                        "type": "periodic_health",
+                        "status": health.get("status", "unknown"),
+                        "decisions_count": stats.get("decisions", 0),
+                        "patterns_count": stats.get("patterns", 0),
+                        "context_keys": stats.get("context_keys", 0),
+                        "db_size_bytes": stats.get("db_size_bytes", 0),
+                    }
+
+                    # Add pool stats if available and exposed
+                    if database._pool and EXPOSE_STATS:
+                        pool_stats = database._pool.get_pool_stats()
+                        log_entry["pool_available"] = pool_stats.get("available", 0)
+                        log_entry["pool_exhaustion_count"] = pool_stats.get("exhaustion_count", 0)
+
+                    # Add rate limiter stats if exposed
+                    if EXPOSE_STATS:
+                        log_entry["rate_limit_remaining"] = rate_limiter.remaining()
+
+                    logger.info(f"Health check: {log_entry}")
+
+                except asyncio.CancelledError:
+                    logger.debug("Periodic health logging cancelled")
+                    break
+                except Exception as e:
+                    logger.warning(f"Periodic health check failed: {e}")
+
+        health_log_task = asyncio.create_task(periodic_health_log())
+        logger.info(f"Periodic health logging enabled (interval: {HEALTH_LOG_INTERVAL}s)")
+
     try:
         async with stdio_server() as (read_stream, write_stream):
             await server.run(read_stream, write_stream)
     finally:
+        # Cancel health logging task if running
+        if health_log_task and not health_log_task.done():
+            health_log_task.cancel()
+            try:
+                await health_log_task
+            except asyncio.CancelledError:
+                pass
+
         # Ensure cleanup on normal exit using thread-safe function
         close_db()
         logger.info("Server shutdown complete")

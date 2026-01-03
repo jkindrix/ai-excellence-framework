@@ -56,6 +56,16 @@ const COMMAND_TIMEOUT = parseInt(process.env.AIX_TIMEOUT || String(DEFAULT_TIMEO
 const DEBUG_MODE = process.env.AIX_DEBUG === 'true';
 const STRUCTURED_LOGGING = process.env.AIX_STRUCTURED_LOGGING === 'true';
 
+// Maximum length for any single CLI argument value
+// Can be increased for legitimate long inputs (e.g., complex configurations)
+// Default: 1000 chars, Max: 100000 chars
+const DEFAULT_MAX_ARG_LENGTH = 1000;
+const MAX_ARG_LENGTH_LIMIT = 100000; // Safety cap
+const MAX_ARG_LENGTH = Math.min(
+  parseInt(process.env.AIX_MAX_ARG_LENGTH || String(DEFAULT_MAX_ARG_LENGTH), 10),
+  MAX_ARG_LENGTH_LIMIT
+);
+
 // Current operation ID for log correlation (set per-command execution)
 let currentOperationId = null;
 
@@ -116,6 +126,32 @@ const logger = {
 };
 
 /**
+ * Create an abort error for the given command and reason.
+ *
+ * @param {string} commandName - Name of the command
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {Error|undefined} reason - Abort reason
+ * @returns {FrameworkError} Configured error
+ * @private
+ */
+function createAbortError(commandName, timeoutMs, reason) {
+  const isTimeout = reason?.name === 'TimeoutError';
+  return createError(
+    'AIX-GEN-901',
+    isTimeout
+      ? `Command '${commandName}' timed out after ${timeoutMs}ms. Set AIX_TIMEOUT environment variable to increase the timeout.`
+      : `Command '${commandName}' was aborted: ${reason?.message || 'Unknown reason'}`,
+    {
+      context: {
+        command: commandName,
+        timeout: timeoutMs,
+        reason: reason?.name || 'AbortError'
+      }
+    }
+  );
+}
+
+/**
  * Wrap a command handler with timeout support using AbortController.
  *
  * Uses the modern AbortSignal.timeout() API for cleaner cancellation semantics.
@@ -123,6 +159,7 @@ const logger = {
  * - Automatic cleanup when the timeout fires
  * - Proper signal propagation for cancellable operations
  * - Clear abort reason for debugging
+ * - Defensive handling of edge cases (pre-aborted signals, race conditions)
  *
  * If the command takes longer than the configured timeout, it will be aborted
  * with an appropriate error message.
@@ -152,6 +189,13 @@ function withTimeout(handler, commandName) {
     // AbortSignal.any() allows combining multiple abort reasons
     const combinedSignal = AbortSignal.any([controller.signal, timeoutSignal]);
 
+    // Check if signal is already aborted (defensive: handles edge case where
+    // timeout is extremely short or system is under heavy load)
+    if (combinedSignal.aborted) {
+      currentOperationId = null;
+      throw createAbortError(commandName, timeoutMs, combinedSignal.reason);
+    }
+
     // Store signal on args options if present (allows handlers to check for abort)
     // This enables cooperative cancellation within command handlers
     const lastArg = args[args.length - 1];
@@ -159,36 +203,48 @@ function withTimeout(handler, commandName) {
       lastArg._abortSignal = combinedSignal;
     }
 
-    // Create abort handler that can be cleaned up
+    // Track whether we've already cleaned up to prevent double-cleanup
+    let cleanedUp = false;
     let abortReject = null;
-    const abortHandler = () => {
-      const { reason } = combinedSignal;
-      // Check if this was a timeout (reason will be a TimeoutError)
-      const isTimeout = reason?.name === 'TimeoutError';
+    let abortHandler = null;
 
+    /**
+     * Clean up abort listener and reset state.
+     * Safe to call multiple times (idempotent).
+     */
+    const cleanup = () => {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+
+      if (abortHandler) {
+        combinedSignal.removeEventListener('abort', abortHandler);
+        abortHandler = null;
+      }
+      abortReject = null;
+      currentOperationId = null;
+    };
+
+    // Create abort handler that can be cleaned up
+    abortHandler = () => {
       if (abortReject) {
-        abortReject(
-          createError(
-            'AIX-GEN-901',
-            isTimeout
-              ? `Command '${commandName}' timed out after ${timeoutMs}ms. Set AIX_TIMEOUT environment variable to increase the timeout.`
-              : `Command '${commandName}' was aborted: ${reason?.message || 'Unknown reason'}`,
-            {
-              context: {
-                command: commandName,
-                timeout: timeoutMs,
-                reason: reason?.name || 'AbortError'
-              }
-            }
-          )
-        );
+        abortReject(createAbortError(commandName, timeoutMs, combinedSignal.reason));
       }
     };
 
     // Listen for abort to throw appropriate error
+    // Note: We add the listener before creating the promise to avoid race conditions
+    combinedSignal.addEventListener('abort', abortHandler, { once: true });
+
+    // Create the abort promise after adding listener
     const abortPromise = new Promise((_, reject) => {
       abortReject = reject;
-      combinedSignal.addEventListener('abort', abortHandler, { once: true });
+      // Double-check: if signal was aborted between our check and adding listener,
+      // reject immediately (defensive against race conditions)
+      if (combinedSignal.aborted) {
+        reject(createAbortError(commandName, timeoutMs, combinedSignal.reason));
+      }
     });
 
     try {
@@ -196,15 +252,14 @@ function withTimeout(handler, commandName) {
       const result = await Promise.race([handler.apply(this, args), abortPromise]);
       return result;
     } catch (error) {
-      // Abort any ongoing operations (cleanup)
-      controller.abort(error);
+      // Abort any ongoing operations (cleanup for cooperative cancellation)
+      if (!controller.signal.aborted) {
+        controller.abort(error);
+      }
       throw error;
     } finally {
-      // Clean up: remove abort listener to prevent memory leaks on successful completion
-      combinedSignal.removeEventListener('abort', abortHandler);
-      abortReject = null;
-      // Clean up operation ID after command completes (success or failure)
-      currentOperationId = null;
+      // Clean up: remove abort listener to prevent memory leaks
+      cleanup();
     }
   };
 }
@@ -214,9 +269,6 @@ const __dirname = dirname(__filename);
 
 // Read package.json for version
 const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
-
-// Maximum length for any single CLI argument value
-const MAX_ARG_LENGTH = 1000;
 
 // Expected types for known options (for explicit type checking)
 const OPTION_TYPES = {
@@ -305,8 +357,8 @@ program
   .description(
     'AI Excellence Framework - Reduce friction in AI-assisted development\n\n' +
     'Input Limits:\n' +
-    `  - String arguments: max ${MAX_ARG_LENGTH} characters\n` +
-    '  - Timeout: default 120s (set AIX_TIMEOUT env var to customize, max 600s)'
+    `  - String arguments: max ${MAX_ARG_LENGTH} characters (set AIX_MAX_ARG_LENGTH to customize)\n` +
+    '  - Timeout: default 5min (set AIX_TIMEOUT env var to customize, max 600s)'
   )
   .version(packageJson.version)
   .option('--no-color', 'Disable colored output (also respects NO_COLOR env var)')

@@ -350,5 +350,209 @@ class TestSecurityBoundaries:
         assert len(decisions[0]["decision"]) <= 10015  # MAX_STRING_LENGTH + truncation suffix
 
 
+# Import additional components if MCP is available
+if MCP_AVAILABLE:
+    escape_like_pattern = project_memory_server.escape_like_pattern
+    ConnectionPool = project_memory_server.ConnectionPool
+    RateLimiter = project_memory_server.RateLimiter
+    EXPOSE_STATS = project_memory_server.EXPOSE_STATS
+else:
+    escape_like_pattern = None
+    ConnectionPool = None
+    RateLimiter = None
+    EXPOSE_STATS = True
+
+
+class TestEscapeLikePattern:
+    """Tests for the escape_like_pattern function with '!' escape character."""
+
+    def test_escape_percent(self):
+        """Test that % is escaped."""
+        result = escape_like_pattern("100%")
+        assert result == "100!%"
+
+    def test_escape_underscore(self):
+        """Test that _ is escaped."""
+        result = escape_like_pattern("test_value")
+        assert result == "test!_value"
+
+    def test_escape_exclamation(self):
+        """Test that ! (the escape char) is escaped."""
+        result = escape_like_pattern("wow!")
+        assert result == "wow!!"
+
+    def test_escape_combined(self):
+        """Test combined escaping."""
+        result = escape_like_pattern("50% off!")
+        assert result == "50!% off!!"
+
+    def test_no_escape_needed(self):
+        """Test string without special characters."""
+        result = escape_like_pattern("normal string")
+        assert result == "normal string"
+
+    def test_non_string_conversion(self):
+        """Test that non-strings are converted."""
+        result = escape_like_pattern(123)
+        assert result == "123"
+
+
+class TestConnectionPoolWarmup:
+    """Tests for connection pool warmup rate limiting."""
+
+    @pytest.fixture
+    def temp_db(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir) / "test.db"
+
+    def test_warmup_succeeds(self, temp_db):
+        """Test that warmup works on first call."""
+        pool = ConnectionPool(temp_db, pool_size=2)
+        result = pool.warmup(force=True)
+
+        assert result["connections_warmed"] == 2
+        assert result["errors"] == 0
+        assert result["skipped"] is False
+        pool.close_all()
+
+    def test_warmup_rate_limiting(self, temp_db):
+        """Test that warmup is rate limited."""
+        pool = ConnectionPool(temp_db, pool_size=2)
+
+        # First warmup should succeed
+        result1 = pool.warmup()
+        assert result1["skipped"] is False
+
+        # Second immediate warmup should be skipped
+        result2 = pool.warmup()
+        assert result2["skipped"] is True
+        assert "cooldown_remaining" in result2
+
+        pool.close_all()
+
+    def test_warmup_force_bypasses_rate_limit(self, temp_db):
+        """Test that force=True bypasses rate limiting."""
+        pool = ConnectionPool(temp_db, pool_size=2)
+
+        # First warmup
+        pool.warmup()
+
+        # Force warmup should work even within cooldown
+        result = pool.warmup(force=True)
+        assert result["skipped"] is False
+        assert result["connections_warmed"] == 2
+
+        pool.close_all()
+
+
+class TestPoolStatsExposure:
+    """Tests for pool stats exposure control."""
+
+    @pytest.fixture
+    def temp_db(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir) / "test.db"
+
+    def test_stats_include_sensitive_by_default(self, temp_db):
+        """Test that stats include sensitive data by default."""
+        pool = ConnectionPool(temp_db, pool_size=2)
+        pool.initialize()
+
+        stats = pool.get_pool_stats()
+
+        # Should include sensitive fields when EXPOSE_STATS is true
+        if EXPOSE_STATS:
+            assert "exhaustion_count" in stats
+            assert "available" in stats
+            assert "temp_connections_created" in stats
+            assert "stats_redacted" not in stats
+        else:
+            assert "stats_redacted" in stats
+            assert stats["stats_redacted"] is True
+
+        pool.close_all()
+
+    def test_stats_can_be_redacted(self, temp_db):
+        """Test that stats can be explicitly redacted."""
+        pool = ConnectionPool(temp_db, pool_size=2)
+        pool.initialize()
+
+        # Force redacted stats
+        stats = pool.get_pool_stats(include_sensitive=False)
+
+        assert stats["stats_redacted"] is True
+        assert "exhaustion_count" not in stats
+        assert "available" not in stats
+
+        pool.close_all()
+
+    def test_prometheus_metrics_respects_redaction(self, temp_db):
+        """Test that Prometheus metrics respect redaction setting."""
+        pool = ConnectionPool(temp_db, pool_size=2)
+        pool.initialize()
+
+        metrics = pool.get_prometheus_metrics()
+
+        # Check metrics format
+        assert "mcp_pool_size_total" in metrics
+        assert "mcp_pool_initialized" in metrics
+
+        pool.close_all()
+
+
+class TestRateLimiter:
+    """Tests for the RateLimiter class."""
+
+    def test_allows_operations_under_limit(self):
+        """Test that operations under limit are allowed."""
+        limiter = RateLimiter(max_ops=10, window_seconds=60)
+
+        for _ in range(5):
+            assert limiter.check() is True
+
+    def test_blocks_operations_over_limit(self):
+        """Test that operations over limit are blocked."""
+        limiter = RateLimiter(max_ops=3, window_seconds=60)
+
+        # Use all allowed ops
+        for _ in range(3):
+            assert limiter.check() is True
+
+        # Next should be blocked
+        assert limiter.check() is False
+
+    def test_remaining_count(self):
+        """Test that remaining count is accurate."""
+        limiter = RateLimiter(max_ops=10, window_seconds=60)
+
+        assert limiter.remaining() == 10
+        limiter.check()
+        assert limiter.remaining() == 9
+
+    def test_reset_clears_operations(self):
+        """Test that reset clears tracked operations."""
+        limiter = RateLimiter(max_ops=3, window_seconds=60)
+
+        # Use all ops
+        for _ in range(3):
+            limiter.check()
+
+        # Reset
+        limiter.reset()
+
+        # Should allow operations again
+        assert limiter.check() is True
+        assert limiter.remaining() == 2
+
+    def test_configure_updates_limits(self):
+        """Test that configure updates rate limits."""
+        limiter = RateLimiter(max_ops=10, window_seconds=60)
+
+        config = limiter.configure(max_ops=5, window_seconds=30)
+
+        assert config["max_ops"] == 5
+        assert config["window_seconds"] == 30
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

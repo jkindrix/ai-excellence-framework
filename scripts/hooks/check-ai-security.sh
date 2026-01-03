@@ -19,6 +19,29 @@
 #   and modify as needed. This hook uses hardcoded patterns for performance,
 #   but the JSON file serves as documentation and can be used by custom tooling.
 #
+# Known Limitations:
+#   1. Test Directory Exclusions: Paths containing /tests/, /__tests__/, or /test/
+#      are excluded from credential detection to avoid false positives from test
+#      fixtures. However, this means:
+#      - Real secrets in test directories will NOT be detected
+#      - Files with "test" in their name but NOT in a test directory ARE scanned
+#      - Test utility files outside dedicated test directories ARE scanned
+#      For maximum security, use dedicated secret scanning tools like:
+#      - git-secrets (https://github.com/awslabs/git-secrets)
+#      - truffleHog (https://github.com/trufflesecurity/trufflehog)
+#      - detect-secrets (https://github.com/Yelp/detect-secrets)
+#
+#   2. Pattern-Based Detection: This hook uses regex patterns which cannot detect
+#      all forms of credential exposure. It may miss:
+#      - Obfuscated or encoded credentials
+#      - Credentials in non-standard formats
+#      - Environment variable leaks through logging
+#      - Credentials in binary files
+#
+#   3. Performance Trade-offs: The hook prioritizes speed for pre-commit use,
+#      which means some patterns are simplified. For comprehensive scanning,
+#      run dedicated security tools in CI/CD pipelines.
+#
 # Part of the AI Excellence Framework
 # https://github.com/ai-excellence-framework/ai-excellence-framework
 
