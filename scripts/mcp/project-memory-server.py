@@ -127,6 +127,14 @@ POOL_SIZE = int(os.environ.get("PROJECT_MEMORY_POOL_SIZE", "5"))
 RATE_LIMIT = int(os.environ.get("PROJECT_MEMORY_RATE_LIMIT", "100"))  # ops per minute
 MAX_STRING_LENGTH = 10000  # Maximum length for any string input
 
+# Import payload limits to prevent memory exhaustion attacks
+# MAX_IMPORT_DECISIONS: Maximum decisions allowed in a single import (default: 10000)
+# MAX_IMPORT_PATTERNS: Maximum patterns allowed in a single import (default: 1000)
+# MAX_IMPORT_CONTEXT_KEYS: Maximum context keys allowed in a single import (default: 500)
+MAX_IMPORT_DECISIONS = int(os.environ.get("PROJECT_MEMORY_MAX_IMPORT_DECISIONS", "10000"))
+MAX_IMPORT_PATTERNS = int(os.environ.get("PROJECT_MEMORY_MAX_IMPORT_PATTERNS", "1000"))
+MAX_IMPORT_CONTEXT_KEYS = int(os.environ.get("PROJECT_MEMORY_MAX_IMPORT_CONTEXT_KEYS", "500"))
+
 # Import data schema definition
 # Validates structure of imported data to prevent malformed imports
 IMPORT_SCHEMA = {
@@ -204,6 +212,13 @@ def validate_import_schema(data: dict) -> tuple[bool, str]:
         if not isinstance(decisions, list):
             return False, "'data.decisions' must be an array"
 
+        # Check payload size limits to prevent memory exhaustion
+        if len(decisions) > MAX_IMPORT_DECISIONS:
+            return False, (
+                f"Import exceeds maximum decisions limit: {len(decisions)} > {MAX_IMPORT_DECISIONS}. "
+                f"Set PROJECT_MEMORY_MAX_IMPORT_DECISIONS to increase limit."
+            )
+
         for i, decision in enumerate(decisions):
             if not isinstance(decision, dict):
                 return False, f"Decision at index {i} must be an object"
@@ -219,6 +234,13 @@ def validate_import_schema(data: dict) -> tuple[bool, str]:
         if not isinstance(patterns, list):
             return False, "'data.patterns' must be an array"
 
+        # Check payload size limits to prevent memory exhaustion
+        if len(patterns) > MAX_IMPORT_PATTERNS:
+            return False, (
+                f"Import exceeds maximum patterns limit: {len(patterns)} > {MAX_IMPORT_PATTERNS}. "
+                f"Set PROJECT_MEMORY_MAX_IMPORT_PATTERNS to increase limit."
+            )
+
         for i, pattern in enumerate(patterns):
             if not isinstance(pattern, dict):
                 return False, f"Pattern at index {i} must be an object"
@@ -232,6 +254,13 @@ def validate_import_schema(data: dict) -> tuple[bool, str]:
         context = inner_data["context"]
         if not isinstance(context, dict):
             return False, "'data.context' must be a dictionary"
+
+        # Check payload size limits to prevent memory exhaustion
+        if len(context) > MAX_IMPORT_CONTEXT_KEYS:
+            return False, (
+                f"Import exceeds maximum context keys limit: {len(context)} > {MAX_IMPORT_CONTEXT_KEYS}. "
+                f"Set PROJECT_MEMORY_MAX_IMPORT_CONTEXT_KEYS to increase limit."
+            )
 
         for key, value in context.items():
             if not isinstance(key, str):
@@ -343,6 +372,21 @@ class ConnectionPool:
         - 5 second busy timeout for lock contention
         - WAL mode for better concurrency
         - Optimized cache and temp storage settings
+
+        Thread Safety Notes:
+        - check_same_thread=False allows sharing connections across threads
+        - WAL mode enables concurrent reads with a single writer
+        - Busy timeout prevents immediate SQLITE_BUSY errors under contention
+        - Each connection should only be used by one thread at a time (pool manages this)
+
+        Concurrency Limitations:
+        - SQLite allows multiple readers OR one writer (not both simultaneously)
+        - Write operations may block briefly under heavy load
+        - For high-concurrency team deployments, consider increasing POOL_SIZE
+        - Monitor exhaustion_count in get_pool_stats() for capacity issues
+
+        @see https://www.sqlite.org/wal.html for WAL mode details
+        @see https://www.sqlite.org/threadsafe.html for threading documentation
         """
         conn = sqlite3.connect(
             str(self.db_path),
@@ -665,6 +709,48 @@ class RateLimiter:
             "remaining": self.remaining()
         }
 
+    def get_prometheus_metrics(self) -> str:
+        """Get rate limiter metrics in Prometheus/OpenMetrics format.
+
+        Returns metrics for monitoring rate limiting behavior:
+        - mcp_rate_limit_max_ops: Configured maximum operations per window
+        - mcp_rate_limit_window_seconds: Window size in seconds
+        - mcp_rate_limit_current_usage: Current operations in window
+        - mcp_rate_limit_remaining: Remaining operations in window
+        - mcp_rate_limit_utilization_ratio: Current usage as fraction of max
+
+        @see https://prometheus.io/docs/instrumenting/exposition_formats/
+
+        Returns:
+            str: Metrics in Prometheus exposition format
+        """
+        config = self.get_config()
+        utilization = config['current_usage'] / config['max_ops'] if config['max_ops'] > 0 else 0
+
+        lines = [
+            "# HELP mcp_rate_limit_max_ops Maximum operations allowed per window",
+            "# TYPE mcp_rate_limit_max_ops gauge",
+            f"mcp_rate_limit_max_ops {config['max_ops']}",
+            "",
+            "# HELP mcp_rate_limit_window_seconds Rate limit window size in seconds",
+            "# TYPE mcp_rate_limit_window_seconds gauge",
+            f"mcp_rate_limit_window_seconds {config['window_seconds']}",
+            "",
+            "# HELP mcp_rate_limit_current_usage Current operations in window",
+            "# TYPE mcp_rate_limit_current_usage gauge",
+            f"mcp_rate_limit_current_usage {config['current_usage']}",
+            "",
+            "# HELP mcp_rate_limit_remaining Remaining operations in window",
+            "# TYPE mcp_rate_limit_remaining gauge",
+            f"mcp_rate_limit_remaining {config['remaining']}",
+            "",
+            "# HELP mcp_rate_limit_utilization_ratio Current usage as fraction of max",
+            "# TYPE mcp_rate_limit_utilization_ratio gauge",
+            f"mcp_rate_limit_utilization_ratio {utilization:.4f}",
+        ]
+
+        return "\n".join(lines)
+
     def reset(self) -> None:
         """Reset the rate limiter, clearing all tracked operations."""
         with self._lock:
@@ -830,6 +916,42 @@ def get_rate_limiter() -> RateLimiter:
             if rate_limiter is None:
                 rate_limiter = create_rate_limiter()
     return rate_limiter
+
+
+def get_all_prometheus_metrics(pool: Optional['ConnectionPool'] = None) -> str:
+    """Get all Prometheus metrics combining pool and rate limiter.
+
+    Provides a complete metrics export suitable for Prometheus scraping.
+    Includes connection pool metrics (if available) and rate limiter metrics.
+
+    Args:
+        pool: Optional ConnectionPool instance. If None, only rate limiter metrics are included.
+
+    Returns:
+        str: Combined metrics in Prometheus exposition format
+
+    Example:
+        >>> metrics = get_all_prometheus_metrics(database._pool)
+        >>> print(metrics)  # Send to /metrics endpoint
+    """
+    timestamp_ms = int(time.time() * 1000)
+    sections = []
+
+    # Pool metrics
+    if pool:
+        sections.append(pool.get_prometheus_metrics().rstrip("# EOF"))
+
+    # Rate limiter metrics
+    try:
+        limiter = get_rate_limiter()
+        sections.append(limiter.get_prometheus_metrics())
+    except Exception as e:
+        sections.append(f"# Rate limiter metrics unavailable: {e}")
+
+    # Footer
+    sections.append(f"# EOF (timestamp: {timestamp_ms})")
+
+    return "\n\n".join(sections)
 
 
 def with_retry(
@@ -1333,6 +1455,22 @@ class ProjectMemoryDB:
                 )
                 if health["status"] == "healthy":
                     health["status"] = "degraded"
+
+        # Check rate limiter status
+        try:
+            limiter = get_rate_limiter()
+            rate_config = limiter.get_config()
+            health["checks"]["rate_limiter"] = rate_config
+            utilization = rate_config["current_usage"] / rate_config["max_ops"] if rate_config["max_ops"] > 0 else 0
+            if utilization > 0.8:
+                health["checks"]["rate_limiter"]["warning"] = (
+                    f"Rate limit {utilization:.0%} utilized - "
+                    "consider increasing PROJECT_MEMORY_RATE_LIMIT"
+                )
+                if health["status"] == "healthy":
+                    health["status"] = "degraded"
+        except Exception as e:
+            health["checks"]["rate_limiter"] = f"unavailable: {str(e)}"
 
         health["db_path"] = str(self.db_path)
 
