@@ -256,26 +256,67 @@ export function getPresetConfig(presetName) {
 }
 
 /**
+ * Check if a value is a plain object (not null, array, or other special types)
+ * @param {*} value - Value to check
+ * @returns {boolean} True if plain object
+ * @private
+ */
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * Deep merge two objects, with source values taking precedence.
+ * Arrays are replaced, not merged. Only plain objects are recursively merged.
+ *
+ * @param {Object} target - Target object
+ * @param {Object} source - Source object (values override target)
+ * @returns {Object} Merged object (new object, inputs are not mutated)
+ * @private
+ */
+function deepMerge(target, source) {
+  const result = { ...target };
+
+  for (const key of Object.keys(source)) {
+    const sourceValue = source[key];
+    const targetValue = target[key];
+
+    // If both values are plain objects, merge recursively
+    if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
+      result[key] = deepMerge(targetValue, sourceValue);
+    } else {
+      // Otherwise, source value wins (including arrays, primitives, null)
+      result[key] = sourceValue;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Merge user configuration with defaults
+ * Uses deep merge to properly handle nested configuration objects.
+ *
  * @param {Object} userConfig - User-provided configuration
  * @param {PresetName} [userConfig.preset] - Preset to use as base
  * @param {MetricsConfig} [userConfig.metrics] - Metrics configuration overrides
  * @returns {PresetConfig} Merged configuration
+ * @example
+ * const config = mergeConfig({
+ *   preset: 'full',
+ *   metrics: { autoCollect: false }  // Override specific nested value
+ * });
  */
 export function mergeConfig(userConfig = {}) {
   const base = userConfig.preset
-    ? { ...DEFAULT_CONFIG, ...getPresetConfig(userConfig.preset) }
-    : DEFAULT_CONFIG;
+    ? deepMerge(DEFAULT_CONFIG, getPresetConfig(userConfig.preset))
+    : { ...DEFAULT_CONFIG };
 
-  return {
-    ...base,
-    ...userConfig,
-    // Deep merge for nested objects
-    metrics: {
-      ...base.metrics,
-      ...(userConfig.metrics || {})
-    }
-  };
+  return deepMerge(base, userConfig);
 }
 
 // ============================================
@@ -382,6 +423,9 @@ export function listInstalledAgents(cwd = process.cwd()) {
  */
 export function readClaudeMd(cwd = process.cwd()) {
   // Emit deprecation warning (only once per process)
+  // Note: This pattern is safe in Node.js's single-threaded execution model.
+  // The flag is set synchronously before emitWarning, preventing re-entrancy.
+  // In clustered environments, each worker process correctly emits one warning.
   if (!readClaudeMd._warned) {
     readClaudeMd._warned = true;
     process.emitWarning(
@@ -411,6 +455,9 @@ readClaudeMd._warned = false;
  * Preferred for command handlers and async contexts to avoid blocking the event loop.
  * This is the recommended way to read CLAUDE.md files.
  *
+ * Uses try/catch with readFile instead of existsSync to avoid TOCTOU race conditions
+ * and maintain fully async behavior.
+ *
  * @param {string} [cwd=process.cwd()] - Directory to read from
  * @returns {Promise<{raw: string, sections: Object.<string, string>}|null>} Parsed CLAUDE.md or null if file doesn't exist
  * @example
@@ -421,12 +468,17 @@ readClaudeMd._warned = false;
  */
 export async function readClaudeMdAsync(cwd = process.cwd()) {
   const path = join(cwd, 'CLAUDE.md');
-  if (!existsSync(path)) {
-    return null;
-  }
 
-  const content = await readFile(path, 'utf-8');
-  return parseClaudeMd(content);
+  try {
+    const content = await readFile(path, 'utf-8');
+    return parseClaudeMd(content);
+  } catch (error) {
+    // Return null for file not found (ENOENT), re-throw other errors
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -497,6 +549,9 @@ export const SECRET_PATTERNS = Object.freeze({
   // Cloud Provider Keys
   cloud: Object.freeze([
     Object.freeze({ name: 'AWS Access Key', pattern: /AKIA[0-9A-Z]{16}/g }),
+    // AWS STS temporary credentials use ASIA prefix (Security Token Service)
+    // @see https://summitroute.com/blog/2018/06/20/aws_security_credential_formats/
+    Object.freeze({ name: 'AWS STS Key', pattern: /ASIA[0-9A-Z]{16}/g }),
     Object.freeze({ name: 'AWS Secret Key', pattern: /aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*["'][a-zA-Z0-9/+=]{40}["']/gi }),
     Object.freeze({ name: 'Azure Connection String', pattern: /DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[a-zA-Z0-9+/=]{88}/g }),
     Object.freeze({ name: 'GCP Service Account', pattern: /"type"\s*:\s*"service_account"/g })
@@ -591,6 +646,9 @@ export function detectSecrets(content, options = {}) {
 
   const findings = [];
   for (const { name, pattern, category } of patterns) {
+    // Reset lastIndex for safety with global regex patterns
+    // String.match() handles this internally, but explicit reset is defensive
+    pattern.lastIndex = 0;
     const matches = content.match(pattern);
     if (matches) {
       findings.push({ type: name, category, count: matches.length });

@@ -22,6 +22,13 @@ import { homedir } from 'os';
 import { relative, isAbsolute } from 'path';
 
 /**
+ * Base URL for error documentation.
+ * Can be overridden via AIX_DOCS_URL environment variable.
+ * @type {string}
+ */
+const DOCS_BASE_URL = process.env.AIX_DOCS_URL || 'https://ai-excellence-framework.github.io';
+
+/**
  * Sanitize context object to prevent sensitive path leakage.
  * Replaces home directory paths with ~ and absolute paths with relative versions.
  * Handles circular references safely to prevent stack overflow.
@@ -222,6 +229,7 @@ export class FrameworkError extends Error {
 
   /**
    * Returns a formatted string for CLI output.
+   * Stack traces are sanitized to prevent path information leakage.
    * @param {boolean} [verbose=false] - Include stack trace
    * @returns {string} Formatted error message
    */
@@ -234,10 +242,12 @@ export class FrameworkError extends Error {
     }
 
     if (verbose && this.stack) {
-      output += `\n  Stack trace:\n  ${this.stack.split('\n').slice(1).join('\n  ')}\n`;
+      // Sanitize stack trace to prevent path information leakage
+      const sanitizedStack = sanitizeStack(this.stack);
+      output += `\n  Stack trace:\n  ${sanitizedStack.split('\n').slice(1).join('\n  ')}\n`;
     }
 
-    output += `\n  Documentation: https://ai-excellence-framework.github.io/ERROR-CODES.html#${this.code.toLowerCase()}\n`;
+    output += `\n  Documentation: ${DOCS_BASE_URL}/ERROR-CODES.html#${this.code.toLowerCase()}\n`;
 
     return output;
   }

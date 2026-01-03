@@ -299,6 +299,9 @@ function checkNoSecrets(cwd, name) {
 
   const findings = [];
   for (const { name: patternName, pattern } of patterns) {
+    // Reset lastIndex before testing to prevent issues with global regex
+    // See: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/lastIndex
+    pattern.lastIndex = 0;
     if (pattern.test(content)) {
       findings.push(patternName);
     }
