@@ -9,11 +9,19 @@ import { join } from 'path';
 import { getProjectName } from './base.js';
 
 /**
- * Generate Windsurf IDE rules
+ * Generate Windsurf IDE rules (.windsurf/rules/).
+ *
+ * Creates project-specific rules for Windsurf IDE based on CLAUDE.md context.
+ *
  * @param {string} cwd - Current working directory
- * @param {object|null} context - Project context
- * @param {object} options - Generation options
- * @param {object} results - Results object
+ * @param {Object|null} context - Project context parsed from CLAUDE.md
+ * @param {Object} options - Generation options
+ * @param {boolean} [options.force=false] - Overwrite existing files
+ * @param {boolean} [options.dryRun=false] - Preview without writing files
+ * @param {Object} results - Results accumulator object
+ * @param {string[]} results.created - Array to push created file paths
+ * @param {string[]} results.skipped - Array to push skipped file paths
+ * @returns {Promise<void>} Resolves when generation is complete
  */
 export async function generateWindsurfRules(cwd, context, options, results) {
   const windsurfDir = join(cwd, '.windsurf');

@@ -8,11 +8,21 @@ import { join } from 'path';
 import { getProjectName, formatTechStack } from './base.js';
 
 /**
- * Generate AGENTS.md file
+ * Generate AGENTS.md file (Linux Foundation AAIF standard).
+ *
+ * Creates a standardized AGENTS.md file for AI agent interoperability,
+ * based on project context from CLAUDE.md.
+ *
  * @param {string} cwd - Current working directory
- * @param {object|null} context - Project context
- * @param {object} options - Generation options
- * @param {object} results - Results object
+ * @param {Object|null} context - Project context parsed from CLAUDE.md
+ * @param {Object} options - Generation options
+ * @param {boolean} [options.force=false] - Overwrite existing files
+ * @param {boolean} [options.dryRun=false] - Preview without writing files
+ * @param {Object} results - Results accumulator object
+ * @param {string[]} results.created - Array to push created file paths
+ * @param {string[]} results.skipped - Array to push skipped file paths
+ * @returns {Promise<void>} Resolves when generation is complete
+ * @see https://agents.md - AAIF standard specification
  */
 export async function generateAgentsMd(cwd, context, options, results) {
   const targetPath = join(cwd, 'AGENTS.md');

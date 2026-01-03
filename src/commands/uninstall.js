@@ -129,7 +129,27 @@ async function removeItem(targetDir, itemPath) {
 }
 
 /**
- * Main uninstall function
+ * Uninstall the AI Excellence Framework from a project.
+ *
+ * Removes framework files including commands, agents, hooks, MCP server,
+ * and optionally the CLAUDE.md configuration file.
+ *
+ * @param {Object} [options={}] - Uninstall options
+ * @param {string} [options.targetDir=process.cwd()] - Directory to uninstall from
+ * @param {boolean} [options.dryRun=false] - Show what would be removed without removing
+ * @param {boolean} [options.force=false] - Skip confirmation prompt
+ * @param {boolean} [options.keepConfig=false] - Preserve CLAUDE.md file
+ * @param {boolean} [options.json=false] - Output results as JSON for scripting
+ * @param {boolean} [options.verbose=false] - Show detailed progress
+ * @returns {Promise<{success: boolean, removed: string[], preserved: string[], errors: Array<{path: string, error: string}>}>}
+ *   Result object with arrays of removed files, preserved files, and any errors
+ * @example
+ * // Dry run to see what would be removed
+ * const result = await uninstall({ dryRun: true });
+ * console.log('Would remove:', result.removed);
+ *
+ * // Uninstall but keep CLAUDE.md
+ * await uninstall({ keepConfig: true });
  */
 export async function uninstall(options = {}) {
   const targetDir = options.targetDir || process.cwd();

@@ -377,7 +377,25 @@ async function promptConfiguration(defaultPreset) {
 }
 
 /**
- * Check for existing framework files in the target directory
+ * Check for existing framework files in the target directory.
+ *
+ * Note on TOCTOU (Time-of-Check to Time-of-Use):
+ * This function uses existsSync which creates a potential TOCTOU window - files
+ * could be created or deleted between when we check here and when we later
+ * attempt to copy files. This is acceptable because:
+ *
+ * 1. Purpose is informational: This check is used to display a prompt asking
+ *    the user if they want to overwrite existing files. It's not a security gate.
+ *
+ * 2. Actual operations handle errors: The file copy operations (fse.copy) that
+ *    happen later will succeed or fail with appropriate error handling regardless
+ *    of this check's results.
+ *
+ * 3. Low-risk context: This runs in a CLI context where the user controls the
+ *    filesystem. Race conditions here affect UX (wrong prompt shown), not security.
+ *
+ * For security-critical path operations, see src/utils/validation.js which uses
+ * atomic statSync patterns.
  *
  * @param {string} cwd - Directory to check
  * @returns {string[]} Array of existing file paths (relative to cwd)

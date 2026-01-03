@@ -104,13 +104,23 @@ const UPDATABLE_COMPONENTS = [
 ];
 
 /**
- * Main update command handler
+ * Main update command handler.
  *
- * @param {object} options - Command options
+ * Checks for and installs updates to framework components (commands, agents,
+ * hooks, templates). Can be used in check-only mode for CI/CD pipelines.
+ *
+ * @param {Object} options - Command options
  * @param {boolean} [options.check=false] - Check for updates without installing
  * @param {boolean} [options.force=false] - Force update even if no changes detected
  * @param {boolean} [options.verbose=false] - Show detailed update progress
- * @param {boolean} [options.json=false] - Output results as JSON
+ * @param {boolean} [options.json=false] - Output results as JSON for scripting
+ * @returns {Promise<void>} Resolves when update check/install is complete
+ * @example
+ * // Check for updates without installing
+ * await updateCommand({ check: true });
+ *
+ * // Force update all components
+ * await updateCommand({ force: true });
  */
 export async function updateCommand(options) {
   const cwd = process.cwd();

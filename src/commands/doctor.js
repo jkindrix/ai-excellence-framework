@@ -533,7 +533,21 @@ const DIAGNOSTICS = [
 ];
 
 /**
- * Main doctor command handler
+ * Main doctor command handler.
+ *
+ * Runs diagnostic checks across multiple categories and reports results.
+ * In JSON mode, outputs structured data; otherwise prints formatted results.
+ *
+ * @param {Object} options - Command options
+ * @param {boolean} [options.verbose=false] - Show detailed diagnostic information
+ * @param {boolean} [options.json=false] - Output results as JSON for scripting
+ * @returns {Promise<void>} Resolves when diagnostics complete (output is to stdout)
+ * @example
+ * // Run diagnostics with JSON output
+ * await doctorCommand({ json: true });
+ *
+ * // Run verbose diagnostics
+ * await doctorCommand({ verbose: true });
  */
 export async function doctorCommand(options) {
   const json = options.json || false;

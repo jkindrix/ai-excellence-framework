@@ -183,7 +183,23 @@ export function detectTools(cwd) {
 }
 
 /**
- * Main detect command handler
+ * Main detect command handler.
+ *
+ * Scans the project directory to identify which AI coding tools are configured.
+ * Detects tools like Claude Code, Cursor, Copilot, Cline, Windsurf, and others
+ * based on their configuration files.
+ *
+ * @param {Object} options - Command options
+ * @param {string} [options.targetDir=process.cwd()] - Directory to scan for tool configurations
+ * @param {boolean} [options.json=false] - Output results as JSON for scripting
+ * @param {boolean} [options.verbose=false] - Show detailed output including config file paths
+ * @returns {Promise<void>} Resolves when detection is complete (output is to stdout)
+ * @example
+ * // Detect tools in current directory
+ * await detectCommand({});
+ *
+ * // Detect with JSON output for scripting
+ * await detectCommand({ json: true });
  */
 export async function detectCommand(options) {
   const cwd = options.targetDir || process.cwd();
