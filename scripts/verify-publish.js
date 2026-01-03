@@ -22,7 +22,7 @@ const ROOT = join(__dirname, '..');
 
 // Configuration
 const MAX_PACKAGE_SIZE_KB = 250; // Maximum acceptable package size in KB
-const MAX_UNPACKED_SIZE_KB = 800; // Maximum unpacked size in KB
+const MAX_UNPACKED_SIZE_KB = 1000; // Maximum unpacked size in KB (allows for comprehensive docs)
 const MAX_FILE_COUNT = 100; // Maximum number of files
 
 // Required files that MUST be in the package
