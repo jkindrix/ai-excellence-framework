@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Excellence Metrics Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-light: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-500: #6b7280;
+            --gray-700: #374151;
+            --gray-900: #1f2937;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--gray-50);
+            color: var(--gray-900);
+            line-height: 1.6;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            color: var(--gray-900);
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        h1::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 1em;
+            background: var(--primary);
+            margin-right: 15px;
+            vertical-align: middle;
+        }
+
+        .subtitle {
+            color: var(--gray-500);
+            font-size: 1.1em;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: var(--gray-700);
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card h2::before {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 20px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .metric {
+            text-align: center;
+            padding: 24px 16px;
+            background: linear-gradient(135deg, var(--gray-50) 0%, white 100%);
+            border-radius: 12px;
+            border: 1px solid var(--gray-200);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .metric:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .metric-value {
+            font-size: 2.8em;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .metric-label {
+            color: var(--gray-500);
+            margin-top: 8px;
+            font-size: 0.95em;
+            font-weight: 500;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            padding: 10px;
+        }
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .chart-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .insights {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+        }
+
+        .insights h2 {
+            color: white;
+            margin-top: 0;
+        }
+
+        .insights h2::before {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .insights ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .insights li {
+            margin: 10px 0;
+            opacity: 0.95;
+        }
+
+        .workflow-stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .workflow-stat {
+            flex: 1;
+            min-width: 200px;
+            padding: 20px;
+            background: var(--gray-50);
+            border-radius: 8px;
+            border-left: 4px solid var(--primary);
+        }
+
+        .workflow-stat .label {
+            color: var(--gray-500);
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .workflow-stat .value {
+            font-size: 1.8em;
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+
+        .footer {
+            text-align: center;
+            color: var(--gray-500);
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AI Excellence Framework</h1>
+        <p class="subtitle">Metrics Report - {{generated_at}}</p>
+    </header>
+
+    <div class="card">
+        <h2>Summary</h2>
+        <div class="metrics">
+            <div class="metric">
+                <div class="metric-value">{{total_sessions}}</div>
+                <div class="metric-label">Total Sessions</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{{total_hours}}h</div>
+                <div class="metric-label">Development Time</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{{completion_rate}}%</div>
+                <div class="metric-label">Task Completion</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{{friction_mitigation_rate}}%</div>
+                <div class="metric-label">Friction Mitigated</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="chart-row">
+        <div class="card">
+            <h2>Productivity Trend</h2>
+            <div class="chart-container">
+                <canvas id="productivityChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Friction Distribution</h2>
+            <div class="chart-container">
+                <canvas id="frictionChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="insights">
+        <h2>Key Insights</h2>
+        <ul>
+            <li>Task completion rate is <strong>{{completion_rate}}%</strong> -
+                <span class="badge badge-success" id="completion-badge">On track</span>
+            </li>
+            <li>Friction mitigation at <strong>{{friction_mitigation_rate}}%</strong> shows effective use of framework tools</li>
+            <li>Average session length indicates healthy development cadence</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>Workflow Adoption</h2>
+        <div class="workflow-stats">
+            <div class="workflow-stat">
+                <div class="label">/plan Usage</div>
+                <div class="value" id="plan-rate">--%</div>
+            </div>
+            <div class="workflow-stat">
+                <div class="label">/verify Usage</div>
+                <div class="value" id="verify-rate">--%</div>
+            </div>
+            <div class="workflow-stat">
+                <div class="label">/handoff Usage</div>
+                <div class="value" id="handoff-rate">--%</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Generated by <a href="https://ai-excellence-framework.github.io/">AI Excellence Framework</a></p>
+        <p>Report covers the selected date range. Data is stored locally and never transmitted.</p>
+    </div>
+
+    <script>
+        // Update badge based on completion rate
+        const completionRate = {{completion_rate}};
+        const badge = document.getElementById('completion-badge');
+        if (completionRate >= 90) {
+            badge.textContent = 'Excellent';
+            badge.className = 'badge badge-success';
+        } else if (completionRate >= 70) {
+            badge.textContent = 'Good';
+            badge.className = 'badge badge-warning';
+        } else {
+            badge.textContent = 'Needs improvement';
+            badge.className = 'badge badge-danger';
+        }
+
+        // Productivity chart
+        new Chart(document.getElementById('productivityChart'), {
+            type: 'line',
+            data: {
+                labels: {{date_labels}},
+                datasets: [{
+                    label: 'Tasks Completed',
+                    data: {{tasks_data}},
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: '#2563eb',
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+
+        // Friction chart
+        new Chart(document.getElementById('frictionChart'), {
+            type: 'doughnut',
+            data: {
+                labels: {{friction_labels}},
+                datasets: [{
+                    data: {{friction_data}},
+                    backgroundColor: ['#ef4444', '#f59e0b', '#10b981', '#6366f1'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 15,
+                            usePointStyle: true
+                        }
+                    }
+                },
+                cutout: '60%'
+            }
+        });
+    </script>
+</body>
+</html>
